@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase'
+import { createClient } from '../../lib/supabase'
 export default function Cadastro() {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')

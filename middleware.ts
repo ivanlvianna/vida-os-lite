@@ -26,21 +26,43 @@ export async function middleware(request: NextRequest) {
   )
 
   const { data: { user } } = await supabase.auth.getUser()
+  const { pathname } = request.nextUrl
 
-  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
+  if (!user && pathname !== '/login' && pathname !== '/cadastro' && !pathname.startsWith('/auth') && !pathname.startsWith('/recuperar-senha')) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (user && (
-    request.nextUrl.pathname === '/login' ||
-    request.nextUrl.pathname === '/cadastro'
-  )) {
+  if (user && (pathname === '/login' || pathname === '/cadastro')) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  if (user && pathname === '/dashboard') {
+    const { data: profile } = await supabase
+      .from('users_profile')
+      .select('nome_completo')
+      .eq('id', user.id)
+      .single()
+
+    if (!profile?.nome_completo) {
+      return NextResponse.redirect(new URL('/onboarding', request.url))
+    }
+  }
+
+  if (user && pathname === '/onboarding') {
+    const { data: profile } = await supabase
+      .from('users_profile')
+      .select('nome_completo')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.nome_completo) {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
   }
 
   return supabaseResponse
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/login', '/cadastro'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/).*)'],
 }

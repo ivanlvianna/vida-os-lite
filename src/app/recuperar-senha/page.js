@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase'
+import { createClient } from '../../lib/supabase'
 export default function RecuperarSenha() {
   const [email, setEmail] = useState('')
   const [carregando, setCarregando] = useState(false)
