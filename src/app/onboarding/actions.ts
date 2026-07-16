@@ -44,7 +44,8 @@ export async function salvarOnboarding(formData: {
 
   const { error } = await supabase
     .from('users_profile')
-    .update({
+    .upsert({
+      id: user.id,
       nome_completo: formData.nome_completo || null,
       telefone_whatsapp: formData.telefone_whatsapp,
       data_nascimento: formData.data_nascimento || null,
@@ -58,8 +59,7 @@ export async function salvarOnboarding(formData: {
       termos_aceito: formData.termos_aceito,
       onboarding_concluido: true,
       updated_at: new Date().toISOString(),
-    })
-    .eq('id', user.id)
+    }, { onConflict: 'id' })
 
   if (error) {
     console.error('Supabase error:', error)
