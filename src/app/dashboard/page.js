@@ -12,7 +12,14 @@ export default async function Dashboard() {
     {
       cookies: {
         getAll() { return cookieStore.getAll() },
-        setAll(cookiesToSet) { cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options)) },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
+          } catch {
+            // setAll chamado a partir de um Server Component — pode ser ignorado
+            // com segurança, pois o middleware já cuida do refresh de sessão.
+          }
+        },
       },
     }
   )
