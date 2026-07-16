@@ -36,6 +36,22 @@ export default async function Dashboard() {
 
   const completude = calcularCompletude(prontuario?.dados)
 
+  // Resultado do IVAD, gravado pelo webhook do Motor Único (/api/webhooks/motor-vida).
+  // Enquanto a Fase 3 do Motor Único não publica o instrumento, esta tabela
+  // fica vazia para todo mundo e o card mostra "Em preparação" — assim que o
+  // primeiro resultado chegar via webhook, o card já reflete automaticamente,
+  // sem precisar de novo deploy.
+  const { data: diagnosticoVida } = await supabase
+    .from('diagnosticos_vida')
+    .select('status, score, perfil, link_relatorio, processado_em')
+    .eq('user_id', user.id)
+    .eq('instrumento', 'IVAD')
+    .order('processado_em', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const diagnosticoConcluido = diagnosticoVida?.status === 'concluido'
+
   const modulos = [
     {
       titulo: 'Arquitetura patrimonial',
@@ -55,10 +71,13 @@ export default async function Dashboard() {
     {
       titulo: 'Diagnóstico VIDA',
       desc: 'Acesse seus diagnósticos e índices comportamentais patrimoniais.',
-      href: null,
-      ativo: false,
+      href: diagnosticoConcluido ? diagnosticoVida.link_relatorio : null,
+      ativo: diagnosticoConcluido,
       completude: null,
-      statusLabel: 'Em preparação',
+      statusLabel: diagnosticoVida?.status === 'processando' ? 'Processando' : 'Em preparação',
+      resultadoExterno: diagnosticoConcluido
+        ? { score: diagnosticoVida.score, perfil: diagnosticoVida.perfil }
+        : null,
     },
   ]
 
@@ -100,8 +119,16 @@ export default async function Dashboard() {
                       </div>
                     </div>
                   )}
+                  {m.resultadoExterno && (
+                    <div style={{ marginBottom: '14px', fontSize: '0.8rem', color: '#444' }}>
+                      {m.resultadoExterno.perfil && <div><strong style={{ color: '#1A3C2E' }}>Perfil:</strong> {m.resultadoExterno.perfil}</div>}
+                      {m.resultadoExterno.score !== null && m.resultadoExterno.score !== undefined && (
+                        <div><strong style={{ color: '#1A3C2E' }}>Score:</strong> {m.resultadoExterno.score}</div>
+                      )}
+                    </div>
+                  )}
                   <Link href={m.href} style={{ display: 'inline-block', fontSize: '0.82rem', fontWeight: '700', color: '#ffffff', backgroundColor: '#1A3C2E', padding: '8px 18px', borderRadius: '4px', textDecoration: 'none', letterSpacing: '0.3px' }}>
-                    {m.completude === 0 ? 'Iniciar →' : 'Acessar →'}
+                    {m.resultadoExterno ? 'Ver relatório →' : m.completude === 0 ? 'Iniciar →' : 'Acessar →'}
                   </Link>
                 </div>
               ) : (
