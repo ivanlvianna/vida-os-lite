@@ -50,6 +50,7 @@ export default async function Dashboard() {
       href: null,
       ativo: false,
       completude: null,
+      statusLabel: 'Em breve',
     },
     {
       titulo: 'Diagnóstico VIDA',
@@ -57,6 +58,7 @@ export default async function Dashboard() {
       href: null,
       ativo: false,
       completude: null,
+      statusLabel: 'Em preparação',
     },
   ]
 
@@ -103,7 +105,7 @@ export default async function Dashboard() {
                   </Link>
                 </div>
               ) : (
-                <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#d7ae4d', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Em breve</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#d7ae4d', letterSpacing: '1.5px', textTransform: 'uppercase' }}>{m.statusLabel || 'Em breve'}</span>
               )}
             </div>
           ))}
