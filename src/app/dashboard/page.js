@@ -36,7 +36,7 @@ export default async function Dashboard() {
 
   const calcularCompletude = (dados) => {
     if (!dados) return 0
-    const total = 26 // total de campos do prontuário
+    const total = 32 // deve permanecer alinhado aos campos definidos em /prontuario
     const preenchidos = Object.values(dados).filter(v => v !== '' && v !== null && v !== undefined && v !== 0).length
     return Math.min(Math.round((preenchidos / total) * 100), 100)
   }
@@ -57,7 +57,7 @@ export default async function Dashboard() {
     .limit(1)
     .maybeSingle()
 
-  const diagnosticoConcluido = diagnosticoVida?.status === 'concluido'
+  const diagnosticoConcluido = diagnosticoVida?.status === 'concluido' && Boolean(diagnosticoVida?.link_relatorio)
 
   const modulos = [
     {
@@ -81,7 +81,11 @@ export default async function Dashboard() {
       href: diagnosticoConcluido ? diagnosticoVida.link_relatorio : null,
       ativo: diagnosticoConcluido,
       completude: null,
-      statusLabel: diagnosticoVida?.status === 'processando' ? 'Processando' : 'Em preparação',
+      statusLabel: diagnosticoVida?.status === 'processando'
+        ? 'Processando'
+        : diagnosticoVida?.status === 'concluido'
+          ? 'Relatório indisponível'
+          : 'Em preparação',
       resultadoExterno: diagnosticoConcluido
         ? { score: diagnosticoVida.score, perfil: diagnosticoVida.perfil }
         : null,
