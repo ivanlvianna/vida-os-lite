@@ -37,7 +37,7 @@ export async function activateClientWorkflow(
     type: 'activate_client',
   })
 
-  if (!authorization.allowed) {
+  if (authorization.allowed === false) {
     if (authorization.reason === 'unauthenticated') {
       throw new VidaOsError(
         'AUTH_REQUIRED',
