@@ -1,99 +1,69 @@
-# VIDA OS™ — direct-current-state bootstrap build plan
+# VIDA OS™ — Bootstrap Build Plan
 
-Status: **DESIGN FROZEN FOR BUILD / BOOTSTRAP ITSELF STILL NON-EXECUTABLE**
+Status: **QUALIFIED / CLOSED FOR CURRENT GATE 0 BASELINE**
 
-Purpose: define the order and proof obligations for reconstructing the approved 2026-09-13 production baseline on a blank compatible Supabase project without relying on undocumented manual history.
+Canonical output:
 
-## Non-negotiable boundaries
+`supabase/bootstrap/production_schema_20260913.sql`
 
-- Do not copy production rows, secrets, API keys or user identities into the bootstrap.
-- Do not replay `../history/` as if it were a blank-database install chain; that folder is forensic evidence.
-- Do not apply any bootstrap draft to production.
-- Do not mix Gate 002 / Phase 1B forward changes into the production-baseline bootstrap. The bootstrap first reproduces the approved current baseline; forward migrations are applied only afterward in a separately authorized environment.
-- Do not call the bootstrap canonical/executable until the clean-install proof and v2 equivalence oracle pass.
+Artifact identity:
 
-## Build order
+- bytes: `100307`
+- SHA-256: `188be8b6bc309c911f9973d00d1bbb158108cecfe6927aacf8a4f50d2c6cae4d`
+- Git blob SHA: `2e4860e499c36c50032a5ea2e2ce48247115643c`
+- production-equivalence fingerprint after replay: `e100181fbc05659e2e9fbcb2c3b296b1` / 584 normalized lines
 
-### B0 — platform prerequisites
+## Objective
 
-Verify that the target is a compatible Supabase/PostgreSQL environment with the platform-owned `auth` schema and standard API roles (`anon`, `authenticated`, `service_role`). Do not attempt to recreate Supabase platform internals.
+Provide a reproducible, standalone bootstrap for the current application-owned VIDA OS Lite production-schema baseline on a compatible Supabase environment, without relying on the incomplete beginning of the historical migration ledger and without embedding production data or secrets.
 
-The production catalog exposes `gen_random_uuid()` in `pg_catalog` (and also through `extensions`), so application DDL must not assume a custom extension search path to resolve UUID generation.
+## Source discipline
 
-### B1 — VIDA technical roles and schema access
+The bootstrap is assembled only from verified Git-resident sources:
 
-Reproduce the three production NOLOGIN roles and their required membership/SET semantics:
+1. Current Legacy Lite structural state (`users_profile`, `prontuario_patrimonial`, `diagnosticos`, `diagnosticos_vida`, policies, ACLs, functions and Auth triggers).
+2. Current Hotmart operational schema.
+3. Scanner VIDA Empresa intake schema.
+4. VIDA public submissions intake schema.
+5. Exact archived Identity Phase 1A + 1A.5 historical SQL, with only its outer transaction boundary removed mechanically so all components can live under one bootstrap transaction.
 
-- `vida_identity_owner`
-- `vida_reconciliation_operator`
-- `vida_identity_rollback_operator`
+The Identity Phase 1A source is independently fixed by all of the following:
 
-Reproduce public-schema USAGE for the VIDA roles and preserve the production privilege boundary. Role membership must be validated against PostgreSQL 17 `ADMIN` / `INHERIT` / `SET` semantics, including the platform-created grant surface visible in the production catalog.
+- 83,433 bytes
+- MD5 `ec71b6ffea682f6ae36ace47d5632fa3`
+- SHA-256 `70adae1b00c135a220a7116b52f87286ffd94d0bbd59b7803f7ef824f4f62670`
+- Git blob SHA `5c8f71dfd8b62a0b8b28d24d214478af7715cc68`
 
-### B2 — Legacy Lite current state
+No inferred replacement of historical SQL is accepted.
 
-Materialize the four pre-ledger/untracked objects from `drafts/legacy_lite_current_state_20260913.DRAFT.sql` only after review:
+## Qualification sequence — completed
 
-- `users_profile`
-- `prontuario_patrimonial`
-- `diagnosticos`
-- `diagnosticos_vida`
+1. Production catalog inventory and ACL/role inventory captured read-only.
+2. Equivalence oracle v2 frozen in `SCHEMA_EQUIVALENCE_QUERY.sql`.
+3. Production acceptance fingerprint fixed at `e100181fbc05659e2e9fbcb2c3b296b1`, 584 normalized lines.
+4. Pre-ledger/current-state components reconstructed from production evidence and recovered migration sources.
+5. Exact Identity Phase 1A body physically archived in Git.
+6. Standalone bootstrap candidate assembled mechanically in Git.
+7. Exact Git candidate transferred byte-for-byte into the existing zero-cost rehearsal project.
+8. Candidate identity re-hashed in rehearsal before execution.
+9. Candidate replayed against a clean application-owned surface inside a rollback-only transaction.
+10. Equivalence oracle returned exactly 584/584 lines and the production fingerprint.
+11. Database smoke tests passed for Auth profile creation, email sync, runtime RLS isolation, column ACLs, canonical-table isolation and idempotent canonical reconciliation.
+12. Rollback/read-back confirmed the rehearsal project returned to its original data state with no synthetic users remaining.
+13. Candidate promoted by Git rename only; SQL bytes did not change.
 
-This includes their current constraints, indexes, RLS policies, effective table/column privileges and the Auth/profile trigger bridge.
+Full proof: `../tests/GATE_0_CANONICAL_BOOTSTRAP_QUALIFICATION.md`.
 
-### B3 — integration and intake current state
+## Operational use
 
-Materialize the current structures for Hotmart, Scanner VIDA Empresa and `vida_public_submissions`. Historical migrations may be used as evidence, but the bootstrap component must represent the current state directly and must not depend on prior objects having been created by an untracked manual step.
+This bootstrap is the baseline for creating a current Gate 0 schema on a compatible Supabase environment. It is not a migration to run over the existing production database; production already contains this state through its historical evolution.
 
-### B4 — Identity Phase 1A current state
+Future intentional schema changes must be represented by new migrations and a new versioned bootstrap/fingerprint rather than by silently editing this baseline.
 
-Materialize the currently approved production Identity layer:
+## Out of scope / not authorized
 
-- `economic_entities`
-- `entity_relationships`
-- `client_accounts`
-- `client_account_entities`
-- `client_account_users`
-- `reconciliation_source`
-- `reconciliation_record`
-
-Reproduce current functions, triggers, ownership, append-only/succession invariants, reconciliation write path, rollback guard and direct-access denials exactly as they exist in production. This is the production baseline only; do not import the Gate 002 Phase 1B delta into this component.
-
-### B5 — ownership and ACL reconciliation
-
-Apply final owners and privilege surfaces after all objects exist. This stage must preserve:
-
-- Phase 1A ownership by `vida_identity_owner` where present in production;
-- legacy/integration ownership by `postgres` where present;
-- current table ACLs, function ACLs and the 14 explicit `users_profile` column UPDATE grants;
-- public-schema ACL semantics;
-- absence of accidental direct Phase 1A access by PUBLIC / `anon` / `authenticated` / `service_role`.
-
-### B6 — clean-install proof
-
-Install B0–B5 on a blank compatible Supabase environment. Do not use production data. The installation must complete without manual edits between components.
-
-### B7 — structural equivalence gate
-
-Run `SCHEMA_EQUIVALENCE_QUERY.sql` on the clean install.
-
-Acceptance oracle v2:
-
-- fingerprint: `e100181fbc05659e2e9fbcb2c3b296b1`
-- normalized object lines: **584**
-
-Any mismatch is a failed gate until reconciled object-by-object or explicitly approved as an intentional platform-version difference. The older 552-line fingerprint is not an acceptance oracle.
-
-### B8 — behavioral smoke gate
-
-After structural equivalence, verify at minimum:
-
-- Auth INSERT creates/synchronizes the Lite profile as expected;
-- Auth e-mail UPDATE synchronizes `users_profile.email`;
-- authenticated user A cannot read or mutate user B's legacy records;
-- authenticated cannot directly mutate `diagnosticos_vida`;
-- Phase 1A canonical tables remain inaccessible directly to API roles in the production-baseline state;
-- reconciliation append-only and succession invariants reject invalid mutations;
-- canonical reconciliation read/write/rollback privilege boundaries behave as specified.
-
-Only after B6–B8 pass may the bootstrap be promoted from draft to executable/canonical. Gate 002 forward migrations remain a separate authorization after that point.
+- Gate 002 / Phase 1B production application.
+- Merge to `main`.
+- Production data migration or backfill.
+- Automatic EconomicEntity/client creation.
+- Treating this 2026-09-13 baseline as canonical after future migrations without re-versioning.
