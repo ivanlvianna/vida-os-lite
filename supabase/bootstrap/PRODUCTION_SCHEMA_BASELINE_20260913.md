@@ -4,24 +4,46 @@ Status: **READ-ONLY CAPTURE / BOOTSTRAP STILL NON-EXECUTABLE**
 
 Source: live production project `dlobyyzixcandloxbeth`, inspected only through read-only catalog queries. No DDL/DML was executed in production.
 
-## Equivalence fingerprint
+## Equivalence fingerprint v2
 
-The canonical read-only query in `SCHEMA_EQUIVALENCE_QUERY.sql` produced:
+The canonical read-only query in `SCHEMA_EQUIVALENCE_QUERY.sql` now includes the public schema ACL, VIDA technical roles and memberships, relation kinds, column-level ACLs, function owners and any public enum/domain types in addition to the structural objects already covered by v1.
 
-- fingerprint: `997d3e04bd3e160bc9368f55560cf59a`
-- normalized object lines: **552**
+It produced:
 
-Current catalog counts inside that baseline:
+- fingerprint v2: `e100181fbc05659e2e9fbcb2c3b296b1`
+- normalized object lines: **584**
 
-- public tables: **17**
+The earlier v1 fingerprint `997d3e04bd3e160bc9368f55560cf59a` / 552 lines is **superseded as the acceptance oracle** because it did not detect column-level ACL differences or the VIDA technical-role surface. It is retained only as historical evidence of the first capture.
+
+Current v2 catalog counts:
+
+- public schema objects: **1**
+- public schema ACL entries: **10**
+- VIDA technical roles: **3**
+- VIDA role-membership grants: **4**
+- public relations in scope: **17** (all ordinary tables in the production baseline)
 - public columns: **148**
+- explicit column ACL entries: **14**
 - public constraints: **65**
 - public indexes: **42**
 - public policies: **13**
 - public functions: **12**
 - non-internal triggers on public plus `auth.users`: **9**
+- effective table ACL entries: **228**
+- effective function ACL entries: **18**
+- public enum/domain types: **0**
 
 This fingerprint is a comparison oracle, not a replacement for installation testing. A clean bootstrap candidate must be installed on a blank compatible Supabase project and then compared to this baseline.
+
+## VIDA technical role surface
+
+The production baseline contains three dedicated NOLOGIN roles, all non-superuser, non-CREATEDB, non-CREATEROLE, non-replication and non-BYPASSRLS:
+
+- `vida_identity_owner`
+- `vida_identity_rollback_operator`
+- `vida_reconciliation_operator`
+
+The v2 oracle also captures their membership grants, including grantor and PostgreSQL 17 membership options (`ADMIN`, `INHERIT`, `SET`). This is material because Phase 1A ownership and rollback/reconciliation boundaries cannot be reproduced by table DDL alone.
 
 ## Public-table inventory
 
@@ -69,6 +91,7 @@ Key current invariants:
 - unique index `users_profile_email_idx(email)`;
 - own-user RLS policies for SELECT/INSERT/UPDATE/DELETE;
 - authenticated UPDATE is column-scoped and intentionally excludes `email`/`id`;
+- the 14 explicit column UPDATE grants are now fingerprinted by the v2 oracle;
 - `handle_new_user()` creates/updates the profile from Auth;
 - `sync_user_profile_email()` synchronizes later Auth e-mail changes;
 - `set_updated_at_users_profile` maintains `updated_at`.
@@ -124,10 +147,10 @@ The current `handle_new_user`, `set_updated_at` and `sync_user_profile_email` fu
 The directory remains non-executable until all of the following are proven:
 
 1. direct-current-state DDL is generated without production data/secrets;
-2. all 17 current public tables, functions, triggers, policies, indexes, constraints, owners and ACL semantics are represented;
-3. required Identity Phase 1A roles/ownership are reproducible;
+2. all 17 current public tables, functions, triggers, policies, indexes, constraints, owners, column ACLs, table/function ACLs, public-schema ACLs and VIDA technical-role semantics are represented;
+3. required Identity Phase 1A roles/ownership/membership grants are reproducible;
 4. the candidate installs cleanly on a blank compatible Supabase project;
-5. the candidate's `SCHEMA_EQUIVALENCE_QUERY.sql` result matches `997d3e04bd3e160bc9368f55560cf59a` / 552 object lines, or any intentional difference is explicitly reviewed;
+5. the candidate's `SCHEMA_EQUIVALENCE_QUERY.sql` result matches `e100181fbc05659e2e9fbcb2c3b296b1` / 584 object lines, or any intentional difference is explicitly reviewed;
 6. application smoke tests pass against the clean installation.
 
 Until then, `production_schema_20260913.sql` must not be labeled executable or canonical.
