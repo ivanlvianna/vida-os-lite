@@ -17,7 +17,26 @@ export async function salvarOnboarding(formData: {
   lgpd_aceito: boolean
   termos_aceito: boolean
 }) {
-  const cookieStore = cookies()
+  const telefoneWhatsapp = formData.telefone_whatsapp?.trim()
+  const numeroDependentes = Number(formData.numero_dependentes)
+
+  if (!telefoneWhatsapp) {
+    return { erro: 'O telefone WhatsApp é obrigatório.' }
+  }
+
+  if (formData.lgpd_aceito !== true) {
+    return { erro: 'É necessário aceitar a política de privacidade para continuar.' }
+  }
+
+  if (formData.termos_aceito !== true) {
+    return { erro: 'É necessário aceitar os termos de uso para continuar.' }
+  }
+
+  if (!Number.isInteger(numeroDependentes) || numeroDependentes < 0 || numeroDependentes > 20) {
+    return { erro: 'Informe um número válido de dependentes.' }
+  }
+
+  const cookieStore = await cookies()
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -46,17 +65,17 @@ export async function salvarOnboarding(formData: {
     .from('users_profile')
     .upsert({
       id: user.id,
-      nome_completo: formData.nome_completo || null,
-      telefone_whatsapp: formData.telefone_whatsapp,
+      nome_completo: formData.nome_completo?.trim() || null,
+      telefone_whatsapp: telefoneWhatsapp,
       data_nascimento: formData.data_nascimento || null,
       profissao: formData.profissao || null,
       estado_civil: formData.estado_civil || null,
-      numero_dependentes: Number(formData.numero_dependentes),
+      numero_dependentes: numeroDependentes,
       possui_empresa: formData.possui_empresa,
       possui_imoveis: formData.possui_imoveis,
       faixa_patrimonio: formData.faixa_patrimonio || null,
-      lgpd_aceito: formData.lgpd_aceito,
-      termos_aceito: formData.termos_aceito,
+      lgpd_aceito: true,
+      termos_aceito: true,
       onboarding_concluido: true,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'id' })
