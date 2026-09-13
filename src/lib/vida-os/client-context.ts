@@ -1,9 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type {
-  AuthorizationRole,
   CurrentPrincipal,
   IdentityState,
 } from '../identity/principal'
+import type { AuthorizationRole } from './types'
 
 export type AvailableAccount = {
   id: string
@@ -34,9 +34,9 @@ export type ActiveEngagement = {
 export type ClientContextBase = {
   availableAccounts: AvailableAccount[]
   plannerRole: 'planner_owner' | 'internal_staff' | null
-  identityState: IdentityState
-  activeAccountId: string | null
-  activeEngagementId: string | null
+  identityState?: IdentityState
+  activeAccountId?: string
+  activeEngagementId?: string
 }
 
 export type ClientContext = ClientContextBase & {
@@ -44,27 +44,46 @@ export type ClientContext = ClientContextBase & {
   activeEngagement: ActiveEngagement | null
 }
 
-export function deriveClientContextBase(principal: CurrentPrincipal): ClientContextBase {
-  const availableAccounts: AvailableAccount[] = principal.memberships.map((membership) => ({
-    id: membership.clientAccountId,
+type LinkedEntityRow = {
+  economic_entities: {
+    id: string
+    display_name: string
+    entity_type: string
+  } | null
+}
+
+export function deriveClientContextBase(
+  principal: CurrentPrincipal,
+  requestedPlanningEngagementId?: string
+): ClientContextBase {
+  const accountIds = Array.from(
+    new Set(principal.memberships.map((membership) => membership.clientAccountId))
+  )
+
+  const availableAccounts: AvailableAccount[] = accountIds.map((accountId) => ({
+    id: accountId,
     roles: Array.from(
       new Set(
-        membership.authorizations
-          .filter((authorization) => authorization.scopeType === 'account')
-          .map((authorization) => authorization.role)
+        principal.memberships
+          .filter(
+            (membership) =>
+              membership.clientAccountId === accountId &&
+              membership.scopeType === 'account'
+          )
+          .map((membership) => membership.role)
       )
     ),
   }))
 
-  const activeMembership = principal.activeContext.clientAccountId
-    ? principal.memberships.find(
-        (membership) => membership.clientAccountId === principal.activeContext.clientAccountId
-      )
-    : undefined
-
-  const accountRoles = activeMembership?.authorizations
-    .filter((authorization) => authorization.scopeType === 'account')
-    .map((authorization) => authorization.role) ?? []
+  const accountRoles = principal.activeClientAccountId
+    ? principal.memberships
+        .filter(
+          (membership) =>
+            membership.clientAccountId === principal.activeClientAccountId &&
+            membership.scopeType === 'account'
+        )
+        .map((membership) => membership.role)
+    : []
 
   const plannerRole = accountRoles.includes('planner_owner')
     ? 'planner_owner'
@@ -72,20 +91,36 @@ export function deriveClientContextBase(principal: CurrentPrincipal): ClientCont
       ? 'internal_staff'
       : null
 
+  // Identity state is a client-final self-assessment. Global internal staff is
+  // deliberately not treated as a pending client merely because it has no
+  // account membership.
+  const identityState: IdentityState | undefined = principal.isInternalStaff
+    ? undefined
+    : principal.memberships.length > 0
+      ? 'active'
+      : principal.session.isAuthenticated
+        ? 'pending_invitation'
+        : undefined
+
   return {
     availableAccounts,
     plannerRole,
-    identityState: principal.identityState,
-    activeAccountId: principal.activeContext.clientAccountId,
-    activeEngagementId: principal.activeContext.planningEngagementId,
+    identityState,
+    ...(principal.activeClientAccountId
+      ? { activeAccountId: principal.activeClientAccountId }
+      : {}),
+    ...(requestedPlanningEngagementId
+      ? { activeEngagementId: requestedPlanningEngagementId }
+      : {}),
   }
 }
 
 export async function enrichClientContext(
   supabase: SupabaseClient,
-  principal: CurrentPrincipal
+  principal: CurrentPrincipal,
+  requestedPlanningEngagementId?: string
 ): Promise<ClientContext> {
-  const base = deriveClientContextBase(principal)
+  const base = deriveClientContextBase(principal, requestedPlanningEngagementId)
 
   let activeAccount: ActiveAccount | null = null
   let activeEngagement: ActiveEngagement | null = null
@@ -99,7 +134,7 @@ export async function enrichClientContext(
         .maybeSingle(),
       supabase
         .from('client_account_entities')
-        .select('economic_entity_id, economic_entities(id, display_name, entity_type)')
+        .select('economic_entities(id, display_name, entity_type)')
         .eq('client_account_id', base.activeAccountId),
     ])
 
@@ -107,10 +142,14 @@ export async function enrichClientContext(
     if (entitiesResult.error) throw entitiesResult.error
 
     if (accountResult.data) {
-      const economicEntities: EconomicEntitySummary[] = (entitiesResult.data ?? [])
-        .map((row: any) => row.economic_entities)
-        .filter(Boolean)
-        .map((entity: any) => ({
+      const entityRows = (entitiesResult.data ?? []) as unknown as LinkedEntityRow[]
+      const economicEntities = entityRows
+        .map((row) => row.economic_entities)
+        .filter(
+          (entity): entity is NonNullable<LinkedEntityRow['economic_entities']> =>
+            entity !== null
+        )
+        .map((entity) => ({
           id: entity.id,
           displayName: entity.display_name,
           entityType: entity.entity_type,
@@ -127,7 +166,9 @@ export async function enrichClientContext(
   if (base.activeAccountId && base.activeEngagementId) {
     const { data, error } = await supabase
       .from('planning_engagements')
-      .select('id, client_account_id, state, opened_at, closed_at, predecessor_engagement_id')
+      .select(
+        'id, client_account_id, state, opened_at, closed_at, predecessor_engagement_id'
+      )
       .eq('id', base.activeEngagementId)
       .eq('client_account_id', base.activeAccountId)
       .maybeSingle()
