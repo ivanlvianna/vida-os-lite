@@ -17,7 +17,7 @@ export async function salvarOnboarding(formData: {
   lgpd_aceito: boolean
   termos_aceito: boolean
 }) {
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
