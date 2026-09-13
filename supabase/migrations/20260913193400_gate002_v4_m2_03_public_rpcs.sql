@@ -1,0 +1,95 @@
+begin;
+grant vida_identity_owner to postgres with inherit true, set true;
+grant create on schema public to vida_identity_owner;
+grant usage,create on schema vida_internal to vida_identity_owner;
+
+create function public.record_planning_engagement_transition(p_engagement_id uuid,p_to_state text,p_event text,p_required_document text default null,p_reason text default null,p_automatic_effect text default null,p_event_origin text default null) returns uuid language plpgsql security definer set search_path='' as $$
+declare v_from_state text;v_state_before_pause text;v_client_account_id uuid;v_actor_auth_user_id uuid;v_actor_label text;v_executor_role text;v_origin text;v_new_state_before_pause text;v_transition_id uuid;v_previous_allow_state_change text;
+begin
+ if p_event_origin is not null and p_event_origin not in ('system','planner','client','external') then raise exception 'p_event_origin inválido: %',p_event_origin; end if;
+ select pe.client_account_id into v_client_account_id from public.planning_engagements pe where pe.id=p_engagement_id and (vida_internal.current_auth_uid() is null or vida_internal.is_staff(pe.client_account_id));
+ if not found then raise exception 'planning_engagement inexistente ou não autorizado'; end if;
+ if vida_internal.current_auth_uid() is not null then v_actor_auth_user_id:=vida_internal.current_auth_uid();v_actor_label:=vida_internal.auth_user_display_label(vida_internal.current_auth_uid());v_executor_role:=coalesce(vida_internal.matched_staff_role(v_client_account_id),'internal_staff');v_origin:=coalesce(p_event_origin,'planner'); else v_actor_auth_user_id:=null;v_actor_label:='sistema';v_executor_role:='system';v_origin:=coalesce(p_event_origin,'system');end if;
+ select state,state_before_pause,client_account_id into v_from_state,v_state_before_pause,v_client_account_id from public.planning_engagements where id=p_engagement_id for update;
+ if vida_internal.current_auth_uid() is not null and not vida_internal.is_staff(v_client_account_id) then raise exception 'autorização de % sobre o planning_engagement % não é mais válida',vida_internal.current_auth_uid(),p_engagement_id;end if;
+ if v_from_state in ('encerrado_concluido','encerrado_cancelado','abandonado') then raise exception 'planning_engagement % está em estado terminal (%) — nenhuma transição é permitida',p_engagement_id,v_from_state;end if;
+ if v_from_state='pausado' then if p_to_state not in ('encerrado_cancelado','abandonado') and p_to_state<>v_state_before_pause then raise exception 'retomada de pausado só pode voltar a % ou ser encerrada/abandonada — % não é permitido',v_state_before_pause,p_to_state;end if; else if not vida_internal.is_valid_planning_engagement_transition(v_from_state,p_to_state) then raise exception 'transição % → % não é permitida',v_from_state,p_to_state;end if;end if;
+ if p_to_state in ('encerrado_concluido','encerrado_cancelado','abandonado') and (p_reason is null or btrim(p_reason)='') then raise exception 'transição para % exige p_reason não vazio — nenhum encerramento é automático',p_to_state;end if;
+ if p_to_state='pausado' then v_new_state_before_pause:=v_from_state;else v_new_state_before_pause:=null;end if;
+ insert into public.planning_engagement_transitions(planning_engagement_id,from_state,to_state,event,required_document,actor_auth_user_id,actor_label,executor_role,reason,origin,automatic_effect) values(p_engagement_id,v_from_state,p_to_state,p_event,p_required_document,v_actor_auth_user_id,v_actor_label,v_executor_role,p_reason,v_origin,p_automatic_effect) returning id into v_transition_id;
+ v_previous_allow_state_change:=current_setting('vida_os.allow_engagement_state_change',true);perform set_config('vida_os.allow_engagement_state_change','on',true);
+ begin update public.planning_engagements set state=p_to_state,state_before_pause=v_new_state_before_pause,closed_at=case when p_to_state in ('encerrado_concluido','encerrado_cancelado','abandonado') then now() else null end where id=p_engagement_id; exception when others then perform set_config('vida_os.allow_engagement_state_change',coalesce(v_previous_allow_state_change,''),true);raise;end;
+ perform set_config('vida_os.allow_engagement_state_change',coalesce(v_previous_allow_state_change,''),true);return v_transition_id;
+end;$$;
+revoke all on function public.record_planning_engagement_transition(uuid,text,text,text,text,text,text) from public,anon,authenticated,service_role;
+
+create function public.create_planning_engagement(p_client_account_id uuid,p_predecessor_engagement_id uuid default null,p_vri_activation_correlation_id text default null,p_event text default 'engagement_criado',p_event_origin text default null) returns uuid language plpgsql security definer set search_path='' as $$
+declare v_engagement_id uuid;v_existing_account_id uuid;v_existing_predecessor_id uuid;v_actor_auth_user_id uuid;v_actor_label text;v_executor_role text;v_origin text;
+begin
+ if p_event_origin is not null and p_event_origin not in ('system','planner','client','external') then raise exception 'p_event_origin inválido: %',p_event_origin;end if;
+ if p_vri_activation_correlation_id is not null and btrim(p_vri_activation_correlation_id)='' then raise exception 'p_vri_activation_correlation_id não pode ser string vazia — use NULL para "sem token"';end if;
+ if vida_internal.current_auth_uid() is not null then if not vida_internal.is_staff(p_client_account_id) then raise exception 'usuário autenticado % não tem papel autorizado a criar Ciclo para a conta %',vida_internal.current_auth_uid(),p_client_account_id;end if;v_actor_auth_user_id:=vida_internal.current_auth_uid();v_actor_label:=vida_internal.auth_user_display_label(vida_internal.current_auth_uid());v_executor_role:=coalesce(vida_internal.matched_staff_role(p_client_account_id),'internal_staff');v_origin:=coalesce(p_event_origin,'planner');else v_actor_auth_user_id:=null;v_actor_label:='sistema';v_executor_role:='system';v_origin:=coalesce(p_event_origin,'system');end if;
+ if p_vri_activation_correlation_id is not null then select planning_engagement_id,client_account_id into v_engagement_id,v_existing_account_id from public.planning_engagement_vri_links where vri_activation_correlation_id=p_vri_activation_correlation_id; if found then if v_existing_account_id<>p_client_account_id then raise exception 'vri_activation_correlation_id informado não pode ser processado para a conta %',p_client_account_id;end if;select predecessor_engagement_id into v_existing_predecessor_id from public.planning_engagements where id=v_engagement_id;if v_existing_predecessor_id is distinct from p_predecessor_engagement_id then raise exception 'vri_activation_correlation_id % já foi processado com predecessor_engagement_id incompatível',p_vri_activation_correlation_id;end if;return v_engagement_id;end if;end if;
+ insert into public.planning_engagements(client_account_id,predecessor_engagement_id) values(p_client_account_id,p_predecessor_engagement_id) returning id into v_engagement_id;
+ if p_vri_activation_correlation_id is not null then begin insert into public.planning_engagement_vri_links(client_account_id,planning_engagement_id,vri_activation_correlation_id) values(p_client_account_id,v_engagement_id,p_vri_activation_correlation_id);exception when unique_violation then delete from public.planning_engagements where id=v_engagement_id;select planning_engagement_id,client_account_id into v_engagement_id,v_existing_account_id from public.planning_engagement_vri_links where vri_activation_correlation_id=p_vri_activation_correlation_id;if v_existing_account_id<>p_client_account_id then raise exception 'vri_activation_correlation_id informado não pode ser processado para a conta % (corrida concorrente)',p_client_account_id;end if;select predecessor_engagement_id into v_existing_predecessor_id from public.planning_engagements where id=v_engagement_id;if v_existing_predecessor_id is distinct from p_predecessor_engagement_id then raise exception 'vri_activation_correlation_id % já foi processado com predecessor_engagement_id incompatível (corrida concorrente)',p_vri_activation_correlation_id;end if;return v_engagement_id;end;end if;
+ insert into public.planning_engagement_transitions(planning_engagement_id,from_state,to_state,event,actor_auth_user_id,actor_label,executor_role,origin) values(v_engagement_id,null,'onboarding_em_andamento',p_event,v_actor_auth_user_id,v_actor_label,v_executor_role,v_origin);
+ return v_engagement_id;
+end;$$;
+revoke all on function public.create_planning_engagement(uuid,uuid,text,text,text) from public,anon,authenticated,service_role;
+
+create function public.grant_client_account_authorization(p_client_account_id uuid,p_target_auth_user_id uuid,p_role text,p_scope_type text,p_planning_engagement_id uuid default null,p_economic_entity_id uuid default null) returns uuid language plpgsql security definer set search_path='' as $$
+declare v_granted_by uuid;v_granted_by_label text;v_target_label text;v_authorization_id uuid;
+begin
+ if vida_internal.current_auth_uid() is null then raise exception 'grant_client_account_authorization exige sessão autenticada';end if;
+ if not vida_internal.has_role_in_scope(p_client_account_id,array['planner_owner']) then raise exception 'usuário % não é planner_owner desta conta — não pode conceder autorização',vida_internal.current_auth_uid();end if;
+ perform 1 from public.client_accounts where id=p_client_account_id for update;
+ if not vida_internal.has_role_in_scope(p_client_account_id,array['planner_owner']) then raise exception 'usuário % não é planner_owner desta conta — não pode conceder autorização',vida_internal.current_auth_uid();end if;
+ if not exists(select 1 from public.client_account_users cau where cau.client_account_id=p_client_account_id and cau.auth_user_id=p_target_auth_user_id) then raise exception 'usuário % não tem membership na conta % — conceda membership antes de autorizar',p_target_auth_user_id,p_client_account_id;end if;
+ v_granted_by:=vida_internal.current_auth_uid();v_granted_by_label:=vida_internal.auth_user_display_label(vida_internal.current_auth_uid());v_target_label:=vida_internal.auth_user_display_label(p_target_auth_user_id);
+ insert into public.client_account_user_authorizations(client_account_id,auth_user_id,auth_user_label,role,scope_type,planning_engagement_id,economic_entity_id,granted_by,granted_by_label) values(p_client_account_id,p_target_auth_user_id,v_target_label,p_role,p_scope_type,p_planning_engagement_id,p_economic_entity_id,v_granted_by,v_granted_by_label) returning id into v_authorization_id;return v_authorization_id;
+end;$$;
+revoke all on function public.grant_client_account_authorization(uuid,uuid,text,text,uuid,uuid) from public,anon,authenticated,service_role;
+
+create function public.revoke_client_account_authorization(p_authorization_id uuid) returns void language plpgsql security definer set search_path='' as $$
+declare v_client_account_id uuid;v_already_revoked timestamptz;v_role text;v_scope_type text;
+begin
+ if vida_internal.current_auth_uid() is null then raise exception 'revoke_client_account_authorization exige sessão autenticada';end if;
+ select a.client_account_id into v_client_account_id from public.client_account_user_authorizations a where a.id=p_authorization_id and vida_internal.has_role_in_scope(a.client_account_id,array['planner_owner']);if not found then raise exception 'autorização % inexistente ou não autorizada para revogação',p_authorization_id;end if;
+ perform 1 from public.client_accounts where id=v_client_account_id for update;
+ select client_account_id,revoked_at,role,scope_type into v_client_account_id,v_already_revoked,v_role,v_scope_type from public.client_account_user_authorizations where id=p_authorization_id for update;
+ if v_already_revoked is not null then raise exception 'autorização % já está revogada — revogação é definitiva',p_authorization_id;end if;
+ if not vida_internal.has_role_in_scope(v_client_account_id,array['planner_owner']) then raise exception 'autorização % inexistente ou não autorizada para revogação',p_authorization_id;end if;
+ if v_role='planner_owner' and v_scope_type='account' and not exists(select 1 from public.client_account_user_authorizations where client_account_id=v_client_account_id and role='planner_owner' and scope_type='account' and revoked_at is null and id<>p_authorization_id) then raise exception 'não é possível revogar o último planner_owner account-scope da conta %',v_client_account_id;end if;
+ update public.client_account_user_authorizations set revoked_at=now(),revoked_by=vida_internal.current_auth_uid(),revoked_by_label=vida_internal.auth_user_display_label(vida_internal.current_auth_uid()) where id=p_authorization_id;
+end;$$;
+revoke all on function public.revoke_client_account_authorization(uuid) from public,anon,authenticated,service_role;
+
+create function vida_internal.bootstrap_client_account(p_planner_auth_user_id uuid,p_vri_correlation_id text default null) returns uuid language plpgsql security definer set search_path='' as $$
+declare v_account_id uuid;v_existing_account_id uuid;v_existing_bootstrap_id uuid;v_label text;
+begin
+ if vida_internal.current_auth_uid() is not null then raise exception 'bootstrap_client_account é função de provisionamento backend — não deve ser chamada em sessão interativa (auth.uid() = %)',vida_internal.current_auth_uid();end if;
+ if p_vri_correlation_id is not null and btrim(p_vri_correlation_id)='' then raise exception 'p_vri_correlation_id não pode ser string vazia — use NULL para "sem token"';end if;
+ if p_vri_correlation_id is not null then select client_account_id,bootstrap_planner_auth_user_id into v_existing_account_id,v_existing_bootstrap_id from public.client_account_vri_links where vri_correlation_id=p_vri_correlation_id;if found then if v_existing_bootstrap_id<>p_planner_auth_user_id then raise exception 'vri_correlation_id % já foi processado com planner_auth_user_id incompatível',p_vri_correlation_id;end if;return v_existing_account_id;end if;end if;
+ insert into public.client_accounts default values returning id into v_account_id;
+ if p_vri_correlation_id is not null then begin insert into public.client_account_vri_links(client_account_id,vri_correlation_id,bootstrap_planner_auth_user_id) values(v_account_id,p_vri_correlation_id,p_planner_auth_user_id);exception when unique_violation then delete from public.client_accounts where id=v_account_id;select client_account_id,bootstrap_planner_auth_user_id into v_account_id,v_existing_bootstrap_id from public.client_account_vri_links where vri_correlation_id=p_vri_correlation_id;if v_existing_bootstrap_id<>p_planner_auth_user_id then raise exception 'vri_correlation_id % já foi processado com planner_auth_user_id incompatível (corrida concorrente)',p_vri_correlation_id;end if;return v_account_id;end;end if;
+ insert into public.client_account_users(client_account_id,auth_user_id) values(v_account_id,p_planner_auth_user_id);v_label:=vida_internal.auth_user_display_label(p_planner_auth_user_id);insert into public.client_account_user_authorizations(client_account_id,auth_user_id,auth_user_label,role,scope_type,granted_by,granted_by_label) values(v_account_id,p_planner_auth_user_id,v_label,'planner_owner','account',null,'sistema (bootstrap)');return v_account_id;
+end;$$;
+revoke all on function vida_internal.bootstrap_client_account(uuid,text) from public,anon,authenticated,service_role;
+
+create function vida_internal.create_economic_entity_internal(p_client_account_id uuid,p_entity_type text,p_display_name text) returns uuid language plpgsql security invoker set search_path='' as $$ declare v_entity_id uuid;begin if p_entity_type is null or p_entity_type not in ('person','organization') then raise exception 'p_entity_type inválido: % — deve ser person ou organization',p_entity_type;end if;if p_display_name is null or btrim(p_display_name)='' then raise exception 'p_display_name não pode ser vazio ou nulo';end if;insert into public.economic_entities(entity_type,display_name) values(p_entity_type,btrim(p_display_name)) returning id into v_entity_id;insert into public.client_account_entities(client_account_id,economic_entity_id) values(p_client_account_id,v_entity_id);return v_entity_id;end;$$;
+revoke all on function vida_internal.create_economic_entity_internal(uuid,text,text) from public,anon,authenticated,service_role;
+create function public.create_economic_entity(p_client_account_id uuid,p_entity_type text,p_display_name text) returns uuid language plpgsql security definer set search_path='' as $$ begin if vida_internal.current_auth_uid() is null then raise exception 'create_economic_entity exige sessão autenticada';end if;if not vida_internal.is_staff(p_client_account_id) then raise exception 'usuário autenticado % não tem papel autorizado a criar EconomicEntity para a conta %',vida_internal.current_auth_uid(),p_client_account_id;end if;perform 1 from public.client_accounts where id=p_client_account_id for update;if not vida_internal.is_staff(p_client_account_id) then raise exception 'autorização de % sobre a conta % não é mais válida',vida_internal.current_auth_uid(),p_client_account_id;end if;return vida_internal.create_economic_entity_internal(p_client_account_id,p_entity_type,p_display_name);end;$$;
+revoke all on function public.create_economic_entity(uuid,text,text) from public,anon,authenticated,service_role;
+
+alter function public.record_planning_engagement_transition(uuid,text,text,text,text,text,text) owner to vida_identity_owner;
+alter function public.create_planning_engagement(uuid,uuid,text,text,text) owner to vida_identity_owner;
+alter function public.grant_client_account_authorization(uuid,uuid,text,text,uuid,uuid) owner to vida_identity_owner;
+alter function public.revoke_client_account_authorization(uuid) owner to vida_identity_owner;
+alter function vida_internal.bootstrap_client_account(uuid,text) owner to vida_identity_owner;
+alter function vida_internal.create_economic_entity_internal(uuid,text,text) owner to vida_identity_owner;
+alter function public.create_economic_entity(uuid,text,text) owner to vida_identity_owner;
+
+revoke create on schema public from vida_identity_owner;
+revoke create on schema vida_internal from vida_identity_owner;
+grant vida_identity_owner to postgres with inherit false, set true;
+commit;
