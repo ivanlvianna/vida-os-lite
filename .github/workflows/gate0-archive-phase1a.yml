@@ -1,0 +1,76 @@
+name: Gate 0 archive Phase 1A
+
+on:
+  push:
+    branches:
+      - gate-0-schema-as-code
+    paths:
+      - .github/workflows/gate0-archive-phase1a.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: gate-0-schema-as-code
+          fetch-depth: 0
+
+      - name: Fetch exact ledger body
+        env:
+          SUPABASE_URL: https://jijdyrinuzyjampptbaf.supabase.co
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_MA7dwnMWvikskXO1RxoeKA_o2GdgeY9
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --get \
+            "$SUPABASE_URL/rest/v1/_gate0_phase1a_export" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            -H "Accept: application/json" \
+            --data-urlencode "select=sql_body" \
+            --data-urlencode "id=eq.identity_phase1a_1a5_production_70adae1b" \
+            -o /tmp/phase1a.json
+
+          python3 - <<'PY'
+          import json, hashlib, pathlib, sys
+          source = pathlib.Path('/tmp/phase1a.json')
+          payload = json.loads(source.read_text(encoding='utf-8'))
+          if len(payload) != 1 or 'sql_body' not in payload[0]:
+              raise SystemExit(f'unexpected export payload: {payload!r}')
+          data = payload[0]['sql_body'].encode('utf-8')
+          expected_bytes = 83433
+          expected_md5 = 'ec71b6ffea682f6ae36ace47d5632fa3'
+          expected_sha256 = '70adae1b00c135a220a7116b52f87286ffd94d0bbd59b7803f7ef824f4f62670'
+          actual = (len(data), hashlib.md5(data).hexdigest(), hashlib.sha256(data).hexdigest())
+          expected = (expected_bytes, expected_md5, expected_sha256)
+          if actual != expected:
+              raise SystemExit(f'fingerprint mismatch: expected={expected}, actual={actual}')
+          target = pathlib.Path('supabase/history/20260912222334_identity_phase1a_1a5_production_70adae1b.sql')
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_bytes(data)
+          print(f'verified {len(data)} bytes md5={actual[1]} sha256={actual[2]}')
+          PY
+
+      - name: Re-verify working-tree file
+        run: |
+          set -euo pipefail
+          test "$(wc -c < supabase/history/20260912222334_identity_phase1a_1a5_production_70adae1b.sql | tr -d ' ')" = "83433"
+          echo "ec71b6ffea682f6ae36ace47d5632fa3  supabase/history/20260912222334_identity_phase1a_1a5_production_70adae1b.sql" | md5sum -c -
+          echo "70adae1b00c135a220a7116b52f87286ffd94d0bbd59b7803f7ef824f4f62670  supabase/history/20260912222334_identity_phase1a_1a5_production_70adae1b.sql" | sha256sum -c -
+
+      - name: Commit exact historical artifact
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/history/20260912222334_identity_phase1a_1a5_production_70adae1b.sql
+          if git diff --cached --quiet; then
+            echo "Exact file is already archived; nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore(db): archive exact Phase 1A production migration"
+          git push origin HEAD:gate-0-schema-as-code
