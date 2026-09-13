@@ -1,18 +1,25 @@
 # Bootstrap baseline — status
 
-Status: **NOT YET EXECUTABLE / recovery in progress**.
+Status: **NOT YET EXECUTABLE / recovery and clean-install proof still pending**.
 
-The production migration ledger starts after some Lite tables already existed. Therefore, replaying `../history/` alone cannot reconstruct a blank database.
+The production migration ledger starts after some Lite tables already existed. Therefore, replaying `../history/` alone cannot reconstruct a blank database. The first tracked migration reads/alters `users_profile`, `prontuario_patrimonial` and `diagnosticos` instead of creating them, and the tracked ledger also does not contain the original creation of `diagnosticos_vida`.
 
-The canonical bootstrap file will be created only after exact recovery of the pre-ledger objects and comparison against the live production schema. It must include all required tables, constraints, indexes, functions, triggers, RLS policies and grants needed to reproduce the approved production baseline without relying on undocumented manual steps.
+## Completed proof work
 
-Until that proof is complete, do not create a guessed `production_schema_20260913.sql` and do not treat historical migrations as a bootstrap chain.
+- [x] Read-only inventory of the live production public schema.
+- [x] Production equivalence oracle captured in `SCHEMA_EQUIVALENCE_QUERY.sql`.
+- [x] Baseline fingerprint captured: `997d3e04bd3e160bc9368f55560cf59a` across 552 normalized object lines.
+- [x] Baseline counts captured: 17 public tables, 148 columns, 65 constraints, 42 indexes, 13 policies, 12 public functions and 9 relevant non-internal triggers.
+- [x] Current structural definitions/invariants of the four pre-ledger/untracked Lite objects documented in `PRODUCTION_SCHEMA_BASELINE_20260913.md`.
+- [x] Gate 002 forward chain independently qualified in the zero-cost rehearsal project.
 
-Required proof before this directory becomes executable:
+## Still required before this directory becomes executable
 
-1. complete inventory of live production objects;
-2. exact capture of legacy Lite table definitions that predate the migration ledger;
-3. exact capture of Phase 1A canonical objects;
-4. clean-database install;
-5. schema equivalence comparison with the approved production baseline;
-6. no synthetic production data included in the bootstrap.
+- [ ] Complete byte-for-byte Git archival of the remaining large Identity Phase 1A historical migration (history is forensic evidence, not the bootstrap itself).
+- [ ] Generate a direct-current-state bootstrap DDL containing the full approved production baseline, with no production data or secrets.
+- [ ] Represent required owners/roles and ACL semantics reproducibly.
+- [ ] Install the bootstrap on a blank compatible Supabase project/environment.
+- [ ] Run `SCHEMA_EQUIVALENCE_QUERY.sql` against that clean install and reconcile any difference against the production oracle.
+- [ ] Run application/auth smoke tests against the clean installation.
+
+The canonical bootstrap file may be promoted to executable only after those proofs pass. Until then, do not create or label a guessed `production_schema_20260913.sql` as canonical, and do not treat historical migrations as a blank-database bootstrap chain.
