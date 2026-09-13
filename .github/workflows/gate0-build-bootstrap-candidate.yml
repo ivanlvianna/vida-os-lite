@@ -1,0 +1,136 @@
+name: Gate 0 build bootstrap candidate
+
+on:
+  push:
+    branches:
+      - gate-0-schema-as-code
+    paths:
+      - .github/workflows/gate0-build-bootstrap-candidate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: gate-0-schema-as-code
+          fetch-depth: 0
+
+      - name: Assemble standalone candidate from verified Git sources
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+
+          root = Path('.')
+          legacy = root / 'supabase/bootstrap/drafts/legacy_lite_current_state_20260913.DRAFT.sql'
+          hotmart = root / 'supabase/bootstrap/drafts/integrations/01_hotmart_current_state_20260913.DRAFT.sql'
+          scanner = root / 'supabase/bootstrap/drafts/integrations/02_scanner_vida_empresa_current_state_20260913.DRAFT.sql'
+          intake = root / 'supabase/bootstrap/drafts/integrations/03_vida_public_submissions_current_state_20260913.DRAFT.sql'
+          phase1a = root / 'supabase/history/20260912222334_identity_phase1a_1a5_production_70adae1b.sql'
+
+          phase_bytes = phase1a.read_bytes()
+          expected_phase = (
+              83433,
+              'ec71b6ffea682f6ae36ace47d5632fa3',
+              '70adae1b00c135a220a7116b52f87286ffd94d0bbd59b7803f7ef824f4f62670',
+          )
+          actual_phase = (
+              len(phase_bytes),
+              hashlib.md5(phase_bytes).hexdigest(),
+              hashlib.sha256(phase_bytes).hexdigest(),
+          )
+          if actual_phase != expected_phase:
+              raise SystemExit(f'Phase 1A Git source mismatch: {actual_phase} != {expected_phase}')
+
+          def strip_outer_transaction(text: str, label: str) -> str:
+              lines = text.splitlines(keepends=True)
+              begin_i = next((i for i,l in enumerate(lines) if l.strip().lower() == 'begin;'), None)
+              commit_i = next((i for i in range(len(lines)-1, -1, -1) if lines[i].strip().lower() == 'commit;'), None)
+              if begin_i is None or commit_i is None or begin_i >= commit_i:
+                  raise SystemExit(f'{label}: expected outer BEGIN/COMMIT not found')
+              del lines[commit_i]
+              del lines[begin_i]
+              return ''.join(lines).rstrip() + '\n'
+
+          legacy_body = strip_outer_transaction(legacy.read_text(encoding='utf-8'), 'legacy')
+          phase_body = strip_outer_transaction(phase_bytes.decode('utf-8'), 'phase1a')
+
+          parts = [
+              '-- VIDA OS™ — standalone production-schema bootstrap candidate\n'
+              '-- Generated mechanically from verified Git sources. No production data or secrets.\n'
+              '-- Status at generation: CANDIDATE; promote only after zero-cost shadow replay + equivalence + smoke PASS.\n\n'
+              'BEGIN;\n\n',
+              '-- ===== Legacy Lite current state =====\n' + legacy_body + '\n',
+              '-- ===== Hotmart current state =====\n' + hotmart.read_text(encoding='utf-8').rstrip() + '\n\n',
+              '-- ===== Scanner VIDA Empresa current state =====\n' + scanner.read_text(encoding='utf-8').rstrip() + '\n\n',
+              '-- ===== VIDA public submissions current state =====\n' + intake.read_text(encoding='utf-8').rstrip() + '\n\n',
+              '-- ===== Identity Phase 1A + 1A.5 — exact historical source with outer transaction removed mechanically =====\n'
+              + phase_body + '\n',
+              'COMMIT;\n',
+          ]
+          text = ''.join(parts)
+          data = text.encode('utf-8')
+          target = root / 'supabase/bootstrap/production_schema_20260913.CANDIDATE.sql'
+          target.write_bytes(data)
+          md5 = hashlib.md5(data).hexdigest()
+          sha256 = hashlib.sha256(data).hexdigest()
+          meta = {
+              'file': str(target),
+              'bytes': len(data),
+              'md5': md5,
+              'sha256': sha256,
+              'phase1a_source_bytes': expected_phase[0],
+              'phase1a_source_md5': expected_phase[1],
+              'phase1a_source_sha256': expected_phase[2],
+          }
+          sidecar = root / 'supabase/bootstrap/production_schema_20260913.CANDIDATE.sha256'
+          sidecar.write_text(f'{sha256}  {target.name}\n', encoding='utf-8')
+          Path('/tmp/gate0-bootstrap-meta.json').write_text(json.dumps(meta, ensure_ascii=False), encoding='utf-8')
+          upload = {
+              'id': 'production_schema_20260913_candidate',
+              'sql_body': text,
+              'bytes': len(data),
+              'md5': md5,
+              'sha256': sha256,
+          }
+          Path('/tmp/gate0-bootstrap-upload.json').write_text(json.dumps(upload, ensure_ascii=False), encoding='utf-8')
+          print(json.dumps(meta, indent=2, ensure_ascii=False))
+          PY
+
+      - name: Upload exact candidate to rehearsal proof table
+        env:
+          SUPABASE_URL: https://jijdyrinuzyjampptbaf.supabase.co
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_MA7dwnMWvikskXO1RxoeKA_o2GdgeY9
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            "$SUPABASE_URL/rest/v1/_gate0_bootstrap_candidate_upload" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=representation" \
+            --data-binary @/tmp/gate0-bootstrap-upload.json \
+            -o /tmp/gate0-bootstrap-upload-response.json
+          python3 - <<'PY'
+          import json
+          r=json.load(open('/tmp/gate0-bootstrap-upload-response.json',encoding='utf-8'))
+          if len(r)!=1 or r[0].get('id')!='production_schema_20260913_candidate':
+              raise SystemExit(f'unexpected upload response: {r!r}')
+          print('rehearsal upload accepted')
+          PY
+
+      - name: Commit candidate and digest
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/bootstrap/production_schema_20260913.CANDIDATE.sql \
+                  supabase/bootstrap/production_schema_20260913.CANDIDATE.sha256
+          git commit -m "chore(db): assemble standalone bootstrap candidate"
+          git push origin HEAD:gate-0-schema-as-code
