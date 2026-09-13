@@ -1,0 +1,22 @@
+begin;
+grant vida_identity_owner to postgres with inherit true, set true;
+
+create index if not exists client_account_membership_events_account_id_idx on public.client_account_membership_events(client_account_id);
+create index if not exists client_account_offboarding_events_workflow_id_idx on public.client_account_offboarding_events(workflow_id);
+create index if not exists client_account_user_authorizations_account_entity_idx on public.client_account_user_authorizations(client_account_id,economic_entity_id);
+create index if not exists client_account_user_authorizations_account_engagement_idx on public.client_account_user_authorizations(client_account_id,planning_engagement_id);
+create index if not exists client_account_user_authorizations_granted_by_idx on public.client_account_user_authorizations(granted_by);
+create index if not exists client_account_user_authorizations_revoked_by_idx on public.client_account_user_authorizations(revoked_by);
+create index if not exists client_activation_seeds_account_engagement_idx on public.client_activation_seeds(client_account_id,planning_engagement_id);
+create index if not exists client_activation_seeds_economic_entity_id_idx on public.client_activation_seeds(economic_entity_id);
+create index if not exists client_activation_seeds_existing_entity_id_idx on public.client_activation_seeds(existing_economic_entity_id);
+create index if not exists planning_engagement_entities_account_entity_idx on public.planning_engagement_entities(client_account_id,economic_entity_id);
+create index if not exists planning_engagement_entities_account_engagement_idx on public.planning_engagement_entities(client_account_id,planning_engagement_id);
+create index if not exists planning_engagement_transitions_actor_auth_user_id_idx on public.planning_engagement_transitions(actor_auth_user_id);
+create index if not exists planning_engagement_vri_links_account_engagement_idx on public.planning_engagement_vri_links(client_account_id,planning_engagement_id);
+create index if not exists planning_engagements_predecessor_engagement_id_idx on public.planning_engagements(predecessor_engagement_id);
+alter policy client_account_users_select on public.client_account_users using (auth_user_id=(select auth.uid()) or vida_internal.is_staff(client_account_id));
+alter policy client_account_user_authorizations_select on public.client_account_user_authorizations using (auth_user_id=(select auth.uid()) or vida_internal.is_staff(client_account_id));
+
+grant vida_identity_owner to postgres with inherit false, set true;
+commit;
