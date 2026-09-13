@@ -142,6 +142,9 @@ create policy "usuario ve seus proprios diagnosticos"
 on public.diagnosticos_vida for select to authenticated
 using ((select auth.uid()) = user_id);
 
+-- Function source below is copied from the production catalog byte-for-byte at
+-- the `prosrc` level because the v2 equivalence oracle fingerprints function
+-- bodies, not only their behavior.
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -160,14 +163,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path to ''
-as $function$
-begin
-  insert into public.users_profile (id,email,lgpd_aceito,termos_aceito,onboarding_concluido)
-  values (new.id,new.email,false,false,false)
-  on conflict (id) do update set email=excluded.email;
-  return new;
-end;
-$function$;
+as $function$ begin insert into public.users_profile (id, email, lgpd_aceito, termos_aceito, onboarding_concluido) values (new.id, new.email, false, false, false) on conflict (id) do update set email = excluded.email; return new; end; $function$;
 revoke all on function public.handle_new_user() from public,anon,authenticated,service_role;
 grant execute on function public.handle_new_user() to service_role;
 
@@ -177,14 +173,14 @@ language plpgsql
 security definer
 set search_path to ''
 as $function$
-begin
-  update public.users_profile
-     set email = new.email,
+BEGIN
+  UPDATE public.users_profile
+     SET email = NEW.email,
          updated_at = now()
-   where id = new.id
-     and email is distinct from new.email;
-  return new;
-end;
+   WHERE id = NEW.id
+     AND email IS DISTINCT FROM NEW.email;
+  RETURN NEW;
+END;
 $function$;
 revoke all on function public.sync_user_profile_email() from public,anon,authenticated,service_role;
 grant execute on function public.sync_user_profile_email() to service_role;
