@@ -1,12 +1,14 @@
 # Production schema baseline inventory — 2026-09-13
 
-Status: **READ-ONLY CAPTURE / BOOTSTRAP STILL NON-EXECUTABLE**
+Status: **READ-ONLY PRODUCTION CAPTURE / STANDALONE GATE 0 BOOTSTRAP QUALIFIED**
 
 Source: live production project `dlobyyzixcandloxbeth`, inspected only through read-only catalog queries. No DDL/DML was executed in production.
 
+Qualified reconstruction artifact: `production_schema_20260913.sql`. Its qualification is documented in `../tests/GATE_0_CANONICAL_BOOTSTRAP_QUALIFICATION.md`.
+
 ## Equivalence fingerprint v2
 
-The canonical read-only query in `SCHEMA_EQUIVALENCE_QUERY.sql` now includes the public schema ACL, VIDA technical roles and memberships, relation kinds, column-level ACLs, function owners and any public enum/domain types in addition to the structural objects already covered by v1.
+The canonical read-only query in `SCHEMA_EQUIVALENCE_QUERY.sql` includes the public schema ACL, VIDA technical roles and memberships, relation kinds, column-level ACLs, function owners and any public enum/domain types in addition to the structural objects already covered by v1.
 
 It produced:
 
@@ -33,7 +35,7 @@ Current v2 catalog counts:
 - effective function ACL entries: **18**
 - public enum/domain types: **0**
 
-This fingerprint is a comparison oracle, not a replacement for installation testing. A clean bootstrap candidate must be installed on a blank compatible Supabase project and then compared to this baseline.
+This fingerprint remains the comparison oracle for the 2026-09-13 baseline. The qualified standalone bootstrap was replayed against a clean application-owned surface in the existing compatible zero-cost rehearsal project and reproduced this fingerprint exactly at **584/584** normalized lines.
 
 ## VIDA technical role surface
 
@@ -73,13 +75,13 @@ The v2 oracle also captures their membership grants, including grantor and Postg
 - `reconciliation_source` — RLS OFF; owner `vida_identity_owner`
 - `reconciliation_record` — RLS OFF; owner `vida_identity_owner`
 
-The Phase 1A tables are deny-by-ACL in the production baseline: PUBLIC, `anon`, `authenticated` and `service_role` have no direct table privileges on them. Gate 002 separately qualified enabling RLS in rehearsal; production remains unchanged.
+The Phase 1A tables are deny-by-ACL in the production baseline: PUBLIC, `anon`, `authenticated` and `service_role` have no direct table privileges on them. Gate 002 separately qualified enabling the future RLS/RBAC access surface in rehearsal; production remains unchanged.
 
-## Undocumented/pre-ledger bootstrap gap
+## Historical pre-ledger bootstrap gap — resolved by direct-current-state bootstrap
 
-The first tracked production migration (`20260716005752_harden_vida_os_lite_rls_and_profiles`) immediately reads or alters existing objects. It does not create the legacy Lite schema. Therefore migration-history replay alone cannot build a blank database.
+The first tracked production migration (`20260716005752_harden_vida_os_lite_rls_and_profiles`) immediately reads or alters existing objects. It does not create the legacy Lite schema. Therefore migration-history replay alone cannot build the current schema from a clean application-owned surface.
 
-At minimum, a direct-current-state bootstrap must account for four legacy objects whose creation is not represented by the tracked production ledger:
+The standalone bootstrap resolves this historical gap by explicitly representing four legacy objects whose creation is not present in the tracked production ledger, plus the recovered integrations and exact Identity Phase 1A state.
 
 ### `users_profile`
 
@@ -91,7 +93,7 @@ Key current invariants:
 - unique index `users_profile_email_idx(email)`;
 - own-user RLS policies for SELECT/INSERT/UPDATE/DELETE;
 - authenticated UPDATE is column-scoped and intentionally excludes `email`/`id`;
-- the 14 explicit column UPDATE grants are now fingerprinted by the v2 oracle;
+- the 14 explicit column UPDATE grants are fingerprinted by the v2 oracle;
 - `handle_new_user()` creates/updates the profile from Auth;
 - `sync_user_profile_email()` synchronizes later Auth e-mail changes;
 - `set_updated_at_users_profile` maintains `updated_at`.
@@ -129,7 +131,7 @@ Key current invariants:
 - index `diagnosticos_vida_user_id_idx`;
 - authenticated has SELECT only, constrained by own-user RLS; writes are backend/service-role operations.
 
-No tracked production migration creates `diagnosticos_vida`, so its creation is also part of the untracked bootstrap gap.
+No tracked production migration creates `diagnosticos_vida`; its current-state DDL is therefore supplied explicitly by the standalone bootstrap.
 
 ## Auth/public trigger surface relevant to bootstrap
 
@@ -142,15 +144,25 @@ Current relevant triggers include:
 
 The current `handle_new_user`, `set_updated_at` and `sync_user_profile_email` functions are not executable by `anon` or `authenticated`; service-role execution remains effective.
 
-## Bootstrap acceptance path
+## Bootstrap qualification — completed
 
-The directory remains non-executable until all of the following are proven:
+The former acceptance path has been completed under the explicit zero-cost constraint:
 
-1. direct-current-state DDL is generated without production data/secrets;
-2. all 17 current public tables, functions, triggers, policies, indexes, constraints, owners, column ACLs, table/function ACLs, public-schema ACLs and VIDA technical-role semantics are represented;
-3. required Identity Phase 1A roles/ownership/membership grants are reproducible;
-4. the candidate installs cleanly on a blank compatible Supabase project;
-5. the candidate's `SCHEMA_EQUIVALENCE_QUERY.sql` result matches `e100181fbc05659e2e9fbcb2c3b296b1` / 584 object lines, or any intentional difference is explicitly reviewed;
-6. application smoke tests pass against the clean installation.
+1. direct-current-state DDL was assembled without production data or secrets;
+2. all 17 current public tables and the relevant functions, triggers, policies, indexes, constraints, owners, column ACLs, table/function ACLs, public-schema ACLs and VIDA technical-role semantics were represented;
+3. the exact 83,433-byte Identity Phase 1A historical body was physically archived in Git and used as a verified source;
+4. the standalone Git artifact was transferred byte-for-byte into the existing compatible rehearsal environment;
+5. before replay, the artifact identity was re-hashed and matched its Git-qualified identity;
+6. replay against a clean application-owned surface reproduced `e100181fbc05659e2e9fbcb2c3b296b1` at **584/584** normalized lines;
+7. database-level smoke tests passed for Auth profile creation, Auth email synchronization, runtime RLS isolation, column ACLs, canonical-table isolation and idempotent canonical reconciliation;
+8. the outer test transaction rolled back cleanly, leaving zero synthetic Gate 0 users and restoring rehearsal row counts;
+9. the qualified candidate was promoted by Git rename only, without changing its SQL bytes.
 
-Until then, `production_schema_20260913.sql` must not be labeled executable or canonical.
+Canonical artifact identity:
+
+- path: `production_schema_20260913.sql`
+- bytes: `100307`
+- SHA-256: `188be8b6bc309c911f9973d00d1bbb158108cecfe6927aacf8a4f50d2c6cae4d`
+- Git blob SHA: `2e4860e499c36c50032a5ea2e2ce48247115643c`
+
+This closes the Gate 0 standalone-schema reconstruction for the 2026-09-13 baseline. It does **not** authorize Gate 002 / Phase 1B production application or a merge to `main`.
