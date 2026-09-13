@@ -28,7 +28,10 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   const { pathname } = request.nextUrl
 
-  if (!user && pathname !== '/login' && pathname !== '/cadastro' && !pathname.startsWith('/auth') && !pathname.startsWith('/recuperar-senha')) {
+  const publicPaths = ['/login', '/cadastro', '/recuperar-senha', '/nova-senha']
+  const isPublicPath = publicPaths.includes(pathname) || pathname.startsWith('/auth')
+
+  if (!user && !isPublicPath) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
@@ -36,26 +39,20 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
-  if (user && pathname === '/dashboard') {
+  if (user && (pathname === '/dashboard' || pathname === '/onboarding')) {
     const { data: profile } = await supabase
       .from('users_profile')
-      .select('nome_completo')
+      .select('onboarding_concluido')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
-    if (!profile?.nome_completo) {
+    const onboardingConcluido = profile?.onboarding_concluido === true
+
+    if (pathname === '/dashboard' && !onboardingConcluido) {
       return NextResponse.redirect(new URL('/onboarding', request.url))
     }
-  }
 
-  if (user && pathname === '/onboarding') {
-    const { data: profile } = await supabase
-      .from('users_profile')
-      .select('nome_completo')
-      .eq('id', user.id)
-      .single()
-
-    if (profile?.nome_completo) {
+    if (pathname === '/onboarding' && onboardingConcluido) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
   }
