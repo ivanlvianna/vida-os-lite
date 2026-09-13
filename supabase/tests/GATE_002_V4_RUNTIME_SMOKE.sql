@@ -65,6 +65,7 @@ begin
  if not v_failed then raise exception 'SMOKE FAIL: direct Auth deletion shortcut allowed'; end if;
 end;$auth_delete_block$;
 
+-- Authenticated planner may invoke the canonical workflow but cannot read its backend-only ledgers directly.
 select set_config('request.jwt.claim.sub',(select owner1::text from gate002_v4_ctx),true);
 set local role authenticated;
 do $start_offboarding$
@@ -73,11 +74,18 @@ begin
  select * into c from gate002_v4_ctx;
  w:=public.start_client_account_offboarding(c.account1,c.target,null,'v4 smoke canonical offboarding');
  update gate002_v4_ctx set workflow=w;
- if (select state from public.client_account_offboarding_workflows where id=w)<>'database_access_removed' then raise exception 'SMOKE FAIL: offboarding DB stage'; end if;
- if exists(select 1 from public.client_account_users where client_account_id=c.account1 and auth_user_id=c.target) then raise exception 'SMOKE FAIL: target membership remains'; end if;
- if exists(select 1 from public.client_account_user_authorizations where client_account_id=c.account1 and auth_user_id=c.target and revoked_at is null) then raise exception 'SMOKE FAIL: target authorization remains active'; end if;
 end;$start_offboarding$;
 reset role;
+
+-- Verify database stage as postgres, then simulate external Auth milestones.
+do $database_stage$
+declare c record;
+begin
+ select * into c from gate002_v4_ctx;
+ if (select state from public.client_account_offboarding_workflows where id=c.workflow)<>'database_access_removed' then raise exception 'SMOKE FAIL: offboarding DB stage'; end if;
+ if exists(select 1 from public.client_account_users where client_account_id=c.account1 and auth_user_id=c.target) then raise exception 'SMOKE FAIL: target membership remains'; end if;
+ if exists(select 1 from public.client_account_user_authorizations where client_account_id=c.account1 and auth_user_id=c.target and revoked_at is null) then raise exception 'SMOKE FAIL: target authorization remains active'; end if;
+end;$database_stage$;
 
 delete from auth.sessions where user_id=(select target from gate002_v4_ctx);
 set local role service_role;
