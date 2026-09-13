@@ -5,13 +5,14 @@ begin;
 
 create temp table gate002_v4_ctx(owner1 uuid, target uuid, owner2 uuid, account1 uuid, engagement1 uuid, account2 uuid, workflow uuid) on commit drop;
 insert into gate002_v4_ctx(owner1,target,owner2) values(gen_random_uuid(),gen_random_uuid(),gen_random_uuid());
+grant select,update on gate002_v4_ctx to authenticated;
+grant select on gate002_v4_ctx to service_role;
 
 insert into auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 select owner1,'authenticated','authenticated','gate002-v4-owner1@example.invalid','{}'::jsonb,'{}'::jsonb,now(),now() from gate002_v4_ctx
 union all select target,'authenticated','authenticated','gate002-v4-target@example.invalid','{}'::jsonb,'{}'::jsonb,now(),now() from gate002_v4_ctx
 union all select owner2,'authenticated','authenticated','gate002-v4-owner2@example.invalid','{}'::jsonb,'{}'::jsonb,now(),now() from gate002_v4_ctx;
 
--- Backend/VRI activation and idempotency for two isolated accounts.
 do $activation$
 declare r1 record; r1b record; r2 record; v_owner1 uuid; v_owner2 uuid;
 begin
@@ -25,7 +26,6 @@ begin
  if (select count(*) from public.client_account_membership_events where client_account_id=r1.client_account_id and event_type='added')<>1 then raise exception 'SMOKE FAIL: bootstrap membership ledger count'; end if;
 end;$activation$;
 
--- Authenticated owner workflow: add member, grant role, last-owner invariant.
 select set_config('request.jwt.claim.sub',(select owner1::text from gate002_v4_ctx),true);
 set local role authenticated;
 do $owner_ops$
@@ -44,7 +44,6 @@ begin
  if not v_failed then raise exception 'SMOKE FAIL: last planner_owner removal allowed'; end if;
 end;$owner_ops$;
 
--- Runtime RLS: owner1 sees account1 but not account2.
 do $rls$
 declare c record; n1 int; n2 int;
 begin
@@ -55,7 +54,6 @@ begin
 end;$rls$;
 reset role;
 
--- Non-canonical Auth deletion is blocked while active authorization remains.
 do $auth_delete_block$
 declare c record; v_failed boolean:=false;
 begin
@@ -67,7 +65,6 @@ begin
  if not v_failed then raise exception 'SMOKE FAIL: direct Auth deletion shortcut allowed'; end if;
 end;$auth_delete_block$;
 
--- Canonical offboarding removes DB access first.
 select set_config('request.jwt.claim.sub',(select owner1::text from gate002_v4_ctx),true);
 set local role authenticated;
 do $start_offboarding$
@@ -82,7 +79,6 @@ begin
 end;$start_offboarding$;
 reset role;
 
--- External Auth milestones simulated as service/backend actions.
 delete from auth.sessions where user_id=(select target from gate002_v4_ctx);
 set local role service_role;
 select public.mark_client_offboarding_sessions_revoked((select workflow from gate002_v4_ctx));
