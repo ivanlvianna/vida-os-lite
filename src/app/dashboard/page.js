@@ -17,7 +17,7 @@ export default async function Dashboard() {
             cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
           } catch {
             // setAll chamado a partir de um Server Component — pode ser ignorado
-            // com segurança, pois o middleware já cuida do refresh de sessão.
+            // com segurança, pois o proxy já cuida do refresh de sessão.
           }
         },
       },
@@ -27,7 +27,6 @@ export default async function Dashboard() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Carregar completude do prontuário
   const { data: prontuario } = await supabase
     .from('prontuario_patrimonial')
     .select('dados')
@@ -36,18 +35,13 @@ export default async function Dashboard() {
 
   const calcularCompletude = (dados) => {
     if (!dados) return 0
-    const total = 26 // total de campos do prontuário
+    const total = 32
     const preenchidos = Object.values(dados).filter(v => v !== '' && v !== null && v !== undefined && v !== 0).length
     return Math.min(Math.round((preenchidos / total) * 100), 100)
   }
 
   const completude = calcularCompletude(prontuario?.dados)
 
-  // Resultado do IVAD, gravado pelo webhook do Motor Único (/api/webhooks/motor-vida).
-  // Enquanto a Fase 3 do Motor Único não publica o instrumento, esta tabela
-  // fica vazia para todo mundo e o card mostra "Em preparação" — assim que o
-  // primeiro resultado chegar via webhook, o card já reflete automaticamente,
-  // sem precisar de novo deploy.
   const { data: diagnosticoVida } = await supabase
     .from('diagnosticos_vida')
     .select('status, score, perfil, link_relatorio, processado_em')
@@ -57,7 +51,7 @@ export default async function Dashboard() {
     .limit(1)
     .maybeSingle()
 
-  const diagnosticoConcluido = diagnosticoVida?.status === 'concluido'
+  const diagnosticoConcluido = diagnosticoVida?.status === 'concluido' && Boolean(diagnosticoVida?.link_relatorio)
 
   const modulos = [
     {
@@ -81,7 +75,11 @@ export default async function Dashboard() {
       href: diagnosticoConcluido ? diagnosticoVida.link_relatorio : null,
       ativo: diagnosticoConcluido,
       completude: null,
-      statusLabel: diagnosticoVida?.status === 'processando' ? 'Processando' : 'Em preparação',
+      statusLabel: diagnosticoVida?.status === 'processando'
+        ? 'Processando'
+        : diagnosticoVida?.status === 'concluido'
+          ? 'Relatório indisponível'
+          : 'Em preparação',
       resultadoExterno: diagnosticoConcluido
         ? { score: diagnosticoVida.score, perfil: diagnosticoVida.perfil }
         : null,
