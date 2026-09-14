@@ -6,14 +6,19 @@ import { changeEngagementStateWorkflow } from '../../app-services/change-engagem
 import { resolveCurrentPrincipal } from '../../lib/identity/identity-context'
 import { createSessionContext } from '../../lib/identity/session-context'
 import { VidaOsError } from '../../lib/vida-os/errors'
+import type { OnboardClientAccountMemberInput } from '../../lib/vida-os/rpc'
 import type {
   AuthorizationRole,
   PlanningEngagementState,
   PlanningEventOrigin,
 } from '../../lib/vida-os/types'
 
-export type DeliveryActionResult<T = Record<string, never>> =
-  | ({ ok: true } & T)
+type DeliveryActionSuccess<T extends object | void> = T extends void
+  ? { ok: true }
+  : { ok: true } & T
+
+export type DeliveryActionResult<T extends object | void = void> =
+  | DeliveryActionSuccess<T>
   | { ok: false; code: string; message: string }
 
 const AUTHORIZATION_ROLES: AuthorizationRole[] = [
@@ -75,7 +80,9 @@ function oneOf<T extends string>(
   return value as T
 }
 
-function failure(error: unknown): DeliveryActionResult {
+function failure<T extends object | void = void>(
+  error: unknown
+): DeliveryActionResult<T> {
   if (error instanceof VidaOsError) {
     return { ok: false, code: error.code, message: error.message }
   }
@@ -107,27 +114,26 @@ export async function grantAccessAction(
       'scopeType'
     )
 
-    const input =
-      scopeType === 'account'
-        ? { clientAccountId, targetAuthUserId, role, scopeType }
-        : scopeType === 'engagement'
-          ? {
-              clientAccountId,
-              targetAuthUserId,
-              role,
-              scopeType,
-              planningEngagementId: requiredText(
-                formData,
-                'planningEngagementId'
-              ),
-            }
-          : {
-              clientAccountId,
-              targetAuthUserId,
-              role,
-              scopeType,
-              economicEntityId: requiredText(formData, 'economicEntityId'),
-            }
+    let input: OnboardClientAccountMemberInput
+    if (scopeType === 'account') {
+      input = { clientAccountId, targetAuthUserId, role, scopeType }
+    } else if (scopeType === 'engagement') {
+      input = {
+        clientAccountId,
+        targetAuthUserId,
+        role,
+        scopeType,
+        planningEngagementId: requiredText(formData, 'planningEngagementId'),
+      }
+    } else {
+      input = {
+        clientAccountId,
+        targetAuthUserId,
+        role,
+        scopeType,
+        economicEntityId: requiredText(formData, 'economicEntityId'),
+      }
+    }
 
     const result = await grantAccessWorkflow(
       principal,
@@ -137,13 +143,13 @@ export async function grantAccessAction(
 
     return { ok: true, authorizationId: result.authorizationId }
   } catch (error) {
-    return failure(error) as DeliveryActionResult<{ authorizationId: string }>
+    return failure<{ authorizationId: string }>(error)
   }
 }
 
 export async function revokeAccessAction(
   formData: FormData
-): Promise<DeliveryActionResult> {
+): Promise<DeliveryActionResult<void>> {
   try {
     const authenticatedClient = await createSessionContext()
     const principal = await resolveCurrentPrincipal(authenticatedClient)
@@ -154,7 +160,7 @@ export async function revokeAccessAction(
 
     return { ok: true }
   } catch (error) {
-    return failure(error)
+    return failure<void>(error)
   }
 }
 
@@ -190,6 +196,6 @@ export async function changeEngagementStateAction(
 
     return { ok: true, transitionId: result.transitionId }
   } catch (error) {
-    return failure(error) as DeliveryActionResult<{ transitionId: string }>
+    return failure<{ transitionId: string }>(error)
   }
 }
