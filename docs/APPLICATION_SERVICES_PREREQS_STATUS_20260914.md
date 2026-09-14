@@ -74,17 +74,29 @@ Seven local checks were executed with a simulated `SupabaseClient` boundary:
 
 Result: **7/7 PASS**.
 
+### Full repository CI
+
+GitHub Actions run `34839179553` was executed from this branch after temporarily adding the branch to the existing P0 CI push filter.
+
+Results:
+
+- checkout: **PASS**;
+- Node setup: **PASS**;
+- `npm ci`: **PASS**;
+- `npm run lint`: **PASS**;
+- `npm run build`: **PASS**;
+- job conclusion: **SUCCESS**.
+
+After the successful run, `.github/workflows/p0-ci.yml` was restored byte-for-byte to the base-branch content. The final PR diff does not alter CI policy.
+
 ## Validation not yet claimed
 
 This record does **not** claim:
 
-- full-repository `npm ci`, lint and Next.js build on this branch;
-- live authenticated E2E execution of the three workflows;
+- live authenticated E2E execution of the three workflows through the Delivery Layer;
 - v0.7 Caso 7 real multi-session concurrency;
 - merge into `p0-functional-integration` or `main`;
 - AH-001 status update to “homologated”.
-
-The repository CI workflow currently runs automatically only for pushes to `p0-functional-integration`; the isolated branch therefore has no automatic CI run from these commits.
 
 ## Artifact-recovery gap — InviteClientWorkflow
 
@@ -94,9 +106,9 @@ No replacement implementation is invented here. The architectural contract remai
 
 ## Current gate state
 
-- GrantAccessWorkflow: **IMPLEMENTED / CONTRACT-VALIDATED / LIVE-E2E PENDING**
-- RevokeAccessWorkflow: **IMPLEMENTED / CONTRACT-VALIDATED / LIVE-E2E PENDING**
-- ChangeEngagementStateWorkflow: **IMPLEMENTED / CONTRACT-VALIDATED / LIVE-E2E PENDING**
+- GrantAccessWorkflow: **IMPLEMENTED / CONTRACT-VALIDATED / CI-GREEN / LIVE-E2E PENDING**
+- RevokeAccessWorkflow: **IMPLEMENTED / CONTRACT-VALIDATED / CI-GREEN / LIVE-E2E PENDING**
+- ChangeEngagementStateWorkflow: **IMPLEMENTED / CONTRACT-VALIDATED / CI-GREEN / LIVE-E2E PENDING**
 - InviteClientWorkflow artifact recovery: **OPEN**
 - `PC-PERSISTENCE-START-GATE-001`: **NOT CLOSED**
 
