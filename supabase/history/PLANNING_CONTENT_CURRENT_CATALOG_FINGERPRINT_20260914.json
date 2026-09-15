@@ -1,0 +1,37 @@
+{
+  "environment": "vida-os-homologacao",
+  "captured_local_date": "2026-09-14",
+  "catalog": {
+    "table_count": 51,
+    "column_count": 543,
+    "columns_md5": "46bec790ff0d338f1d6b80131713973c",
+    "constraint_count": 315,
+    "constraints_md5": "4880ddb2061f37196ce0b582c5a6dbef",
+    "index_count": 126,
+    "indexes_md5": "70fd684b6d72f8d62c9f01ccbb2b538f",
+    "function_count": 40,
+    "functions_md5": "1b68e9a25836c635533a427be841c7ac",
+    "trigger_count": 74,
+    "triggers_md5": "e73c072ece89da32319cadb824229ed5",
+    "policy_count": 51,
+    "policies_md5": "b974f95dee99c0003d6b7a231011ad08",
+    "view_count": 12,
+    "views_md5": "63675e07daaaa508b5768abe230f9e9f",
+    "table_grant_count": 504,
+    "table_grants_md5": "093bbf6569e282babeb6a74a1928830d",
+    "routine_grant_count": 75,
+    "routine_grants_md5": "a6865834ee39fb609489d30c2c095437"
+  },
+  "history": {
+    "migration_count_after_v0_7": 28,
+    "archive_sha256": "bfff89688a1490c00ddcb6dd1118982217ba2075db921c6500bb06aaeae7ab4c",
+    "bootstrap_sql_sha256": "dfe05de1d4a6743e0ba467202ab651f13d3557190ae7ad0b58a895aa4130262a",
+    "bootstrap_gzip_sha256": "5554d34aa84c2d62ff467753a783c55e8547ff84312eabcd89840156715ac951"
+  },
+  "equivalence": {
+    "m07_split_concat_equals_canonical_source": true,
+    "m07_canonical_sha256": "0bbdadca9ec5982055c9c2fa2b3386fa091677d99861f9945192169daf37c929",
+    "freeze_split_concat_equals_canonical_source": true,
+    "freeze_canonical_sha256": "6885b8d39463f08c57cc0ae2778f25ff32e54b8e3b44fdfc8fdb4f94032ba6fc"
+  }
+}
