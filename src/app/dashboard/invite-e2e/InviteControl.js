@@ -30,7 +30,7 @@ export default function InviteControl() {
       )}
       <section style={boxStyle}>
         <h2 style={{ color: '#1A3C2E' }}>InviteClientWorkflow — Live E2E</h2>
-        <p>Alvo de teste: <code>vidaos.e2e.invite.20260914@example.com</code>.</p>
+        <p>Alvo de teste: <code>ivanlvianna@gmail.com</code>.</p>
         <p>Cria apenas a identidade convidada no Auth do D3. Nao cria membership nem authorization.</p>
         <button type="button" onClick={run} disabled={busy} style={{ background: '#1A3C2E', color: '#fff', border: 0, borderRadius: '4px', padding: '10px 16px', fontWeight: 700, cursor: 'pointer' }}>
           {busy ? 'Executando...' : 'Executar InviteClient'}
