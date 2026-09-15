@@ -1,112 +1,147 @@
 # VIDA OS™ — Planning Content Persistence Status — 2026-09-14
 
-## Status
+## Status executivo
 
-`PLANNING-CONTENT-PERSISTENCE-GATE-001 = OPEN / CANDIDATE GENERATION ONLY`
+Planning Content não está mais em fase de candidate generation only.
 
-Esta branch **não autoriza apply no Supabase**. D3 e produção permanecem sem mutations de Planning Content.
+Estado homologado no `vida-os-homologacao`:
 
-## Branch canônica de trabalho
+- `PLANNING-CONTENT-PERSISTENCE-GATE-001 = PASS (HOMOLOGATION)`
+- `PC-M09-PERSISTENCE-GATE-001 = PASS (HOMOLOGATION)`
+- `PC-FREEZE-RECONCILIATION-CONCURRENCY-GATE-001 = PASS`
+- `PC-FREEZE-RECONCILIATION-PERSISTENCE-GATE-001 = PASS (HOMOLOGATION)`
+- `PC-PERFORMANCE-HARDENING-GATE-001 = OPEN / WORKLOAD-BASED`
+- `PC-M10 = BLOCKED ON CANONICAL PROVENANCE`
 
-Branch isolada:
+Isso não autoriza produção, merge em `main` ou criação especulativa dos bounded contexts ainda ausentes.
 
-`planning-content-persistence-2026-09-14`
+## Linhagem Git
 
-Ela foi criada a partir do commit `1f2d22560e073f199c4f98124000c51745a307f5`, head do PR #9 (`app-services-prereqs-2026-09-14` → `p0-functional-integration`). Portanto contém os três Application Services pré-requisitos já CI-green:
+- `app-services-prereqs-2026-09-14` — Application Services pré-requisitos;
+- `planning-content-persistence-2026-09-14` — documentação/candidates Planning Content, linearmente à frente da branch de Application Services;
+- `pfp-cockpit-read-integration-2026-09-14` — integração de leitura do PFP Cockpit sobre PC-M09.
 
-- `GrantAccessWorkflow`
-- `RevokeAccessWorkflow`
-- `ChangeEngagementStateWorkflow`
+A branch de integração não implica merge e não altera produção.
 
-O PR #9 permanece separado; esta branch não o altera nem implica merge.
-
-## Baseline físico verificado em leitura
-
-Ambiente dedicado de homologação atual:
+## Ambiente homologado
 
 - project id: `aregdlspacytbrrdowps`
 - nome: `vida-os-homologacao`
 - PostgreSQL: 17.6
 
-Confirmado no D3:
+Baseline core:
 
-- `planning_engagements` possui `UNIQUE (client_account_id, id)`;
-- membership física: `client_account_users`;
-- `client_account_user_authorizations` preserva histórico e usa `auth.users` com `ON DELETE SET NULL` nos snapshots relevantes;
-- helpers canônicos presentes: `is_staff`, `has_engagement_specific_role`, `has_entity_specific_role`, `has_role_in_scope`, `matched_staff_role`, `auth_user_display_label`;
-- RPCs existentes: `onboard_client_account_member`, `revoke_client_account_authorization`, `record_planning_engagement_transition`;
-- helpers/RPCs críticos usam `SECURITY DEFINER` com `search_path=''`;
-- não existe ainda camada física canônica de Provenance / Evidence / Decision Ledger no D3.
+- v0.6 oficial;
+- v0.7 presente;
+- membership: `client_account_users`;
+- authorization history: `client_account_user_authorizations`;
+- ciclo canônico: `planning_engagement`.
 
-Consequência: `PC-M10` continua dependente e não deve ser inventada antecipadamente.
+## Planning Content persistente
 
-## Planning Content — physical target
+Homologado fisicamente:
 
-Baseline candidato atual:
+- 51 tabelas Planning Content;
+- writers canônicos W1…W5;
+- 74 triggers/guards de imutabilidade na instalação inicial;
+- RLS/ACL deny-by-default;
+- 9 índices direcionados;
+- 12 staff read models PC-M09 com `security_invoker=true`.
 
-- persistência tipada, sem EAV universal;
-- `Root`, `WorkingDraft`, `DurableVersion` e `LifecycleEvent` separados;
-- versions/events append-only;
-- drafts tipados com optimistic concurrency;
-- integridade same-engagement por FKs compostas quando aplicável;
-- escrita canônica por RPC;
-- tabelas-base internas staff-only;
-- cliente acessa somente projections/read models futuros explicitamente aprovados;
-- actor/authorship, computational lineage e evidence provenance permanecem conceitos distintos;
-- AI/system assistance nunca substitui autoria profissional.
+A reconciliação pós-PC-M09 também está persistida:
 
-## Sequência de migrations autorizada para geração
+- predecessor FKs com contexto completo em 10/10 famílias;
+- draft base-version FKs com contexto completo em 6/6 drafts;
+- `transition_no` para WorkingHypothesis;
+- `transition_no` para HypothesisAgenda;
+- `event_no` para DiagnosticReport workflow;
+- `manifestation_no` para report consensus;
+- ReviewEpisodeVersion referencia a ImplementationEpisodeVersion exata;
+- consenso do cliente exige membership + autorização específica de engagement + autorização específica de EconomicEntity;
+- helper interno de ActorStamp do consenso não é executável por `authenticated`;
+- concorrência real consenso × validação passou nos dois ordenamentos legais.
 
-Os arquivos devem ser criados **somente** pelo mecanismo oficial da Supabase CLI:
+## PC-M09 — staff read layer
 
-```bash
-supabase migration new pc_m01_planning_content_foundations
-supabase migration new pc_m02_planning_content_roots
-supabase migration new pc_m03_planning_content_versions
-supabase migration new pc_m04_planning_content_children_refs
-supabase migration new pc_m05_planning_content_drafts
-supabase migration new pc_m06_planning_content_lifecycle_ledgers
-supabase migration new pc_m07_planning_content_writers
-supabase migration new pc_m08_planning_content_access_surface
-supabase migration new pc_m09_planning_content_read_models
-```
+Read models homologados:
 
-`PC-M10` não deve ser criada enquanto a dependência física canônica de Provenance/Evidence não existir.
+1. `pc_rm_interview_current`
+2. `pc_rm_instrument_current`
+3. `pc_rm_synthesis_current`
+4. `pc_rm_working_hypothesis_current`
+5. `pc_rm_open_agenda_current`
+6. `pc_rm_session_current`
+7. `pc_rm_report_current`
+8. `pc_rm_plan_current`
+9. `pc_rm_implementation_current`
+10. `pc_rm_review_current`
+11. `pc_rm_engagement_content_summary`
+12. `pc_rm_engagement_timeline`
 
-Não inventar timestamps ou filenames de migration manualmente.
+Todos preservam o RLS do caller por `security_invoker=true`.
 
-## Gate de segurança
+Cliente não recebe acesso a essa camada. O consenso client-side é uma capability estreita de escrita e não altera a separação staff/client.
 
-Gerar migration candidates não equivale a aplicar.
+## Integração de aplicação PFP Cockpit
 
-Antes de qualquer apply são obrigatórios:
+Na branch `pfp-cockpit-read-integration-2026-09-14` foram introduzidos:
 
-1. static review final DDL × physical target × suíte;
-2. RLS + ACL deny-by-default desde a mesma transaction que cria cada tabela;
-3. revisão específica de todas as funções `SECURITY DEFINER`;
-4. advisors/security review;
-5. rollback/replay scripts;
-6. harness single-session;
-7. harness multi-session real para concorrência;
-8. confirmação explícita do ambiente de homologação;
-9. autorização separada para apply.
+- contrato TypeScript explícito das 12 views PC-M09;
+- adapter de leitura Planning Content usando `SupabaseClient` autenticado da sessão;
+- `listPfpCockpitsWorkflow`;
+- `loadPfpCockpitWorkflow`;
+- rota `/dashboard/pfp` para listar apenas ciclos visíveis via RLS;
+- rota `/dashboard/pfp/[planningEngagementId]` para o Cockpit read-only;
+- UI sem inferir um único relatório/plano/implementação/revisão “principal” por ordem ou data;
+- separação explícita dos bounded contexts ainda ausentes.
 
-Chamadas seriais não podem ser declaradas concurrency PASS.
+Regra arquitetural da integração:
 
-## Supabase 2026 — nota operacional
+`Session client → PC-M09 security-invoker views → base-table RLS`
 
-O comportamento atual de Data API exige grants explícitos para exposição de novas tabelas em projetos com auto-exposure desabilitado. Isso é compatível com o desenho desta frente: Planning Content nasce deny-by-default e só abre a superfície mínima aprovada em `PC-M08`.
+Não usar `service_role` para leitura do Cockpit.
 
-## Bloqueio operacional atual deste ambiente ChatGPT
+## Drift de repositório detectado
 
-A branch foi criada via GitHub, mas o terminal desta sessão não possui resolução de rede para clonar o repositório. Por isso, nesta sessão não é legítimo executar `supabase migration new` dentro de um worktree real.
+A governança do repositório prevê:
 
-Não contornar esse bloqueio inventando nomes/timestamps via GitHub Contents API.
+- `history/` para cópia forense de migrations já aplicadas/recuperadas;
+- `bootstrap/` para baseline qualificado reproduzível;
+- `migrations/` para novas migrations canônicas.
 
-O próximo executor com worktree/CLI funcional deve:
+Durante a homologação, o D3 avançou mais rápido que essa preservação Git. O banco está homologado, mas a árvore Git ainda não contém uma cópia forense completa dos SQL payloads Planning Content aplicados.
 
-1. checkout `planning-content-persistence-2026-09-14`;
-2. rodar `supabase --version` e `supabase --help`;
-3. criar PC-M01..PC-M09 com `supabase migration new`;
-4. preencher os candidatos sem link/apply remoto;
-5. executar apenas validações locais/estáticas até nova autorização.
+Por isso:
+
+`PFP-COCKPIT-MERGE-GATE = BLOCKED ON APPLIED-SQL HISTORY SYNC`
+
+Antes de merge:
+
+1. registrar ledger completo de versions/names aplicados;
+2. preservar os SQL sources recuperados em `supabase/history`;
+3. qualificar bootstrap/replay da baseline corrente;
+4. rodar lint/build em runner com dependências;
+5. revisar diff final antes de qualquer PR/merge.
+
+## Performance
+
+O advisor ainda aponta dívida de índices/FKs. Esse débito permanece separado sob:
+
+`PC-PERFORMANCE-HARDENING-GATE-001 = OPEN / WORKLOAD-BASED`
+
+Não criar índices em massa apenas para zerar linter. A seleção continua condicionada aos query shapes reais e telemetria de workload.
+
+## Dependências deliberadamente fora desta frente
+
+Não inventar antes da definição canônica:
+
+- PC-M10 / Provenance-Evidence físico;
+- Decision Ledger físico;
+- Financial Reality / Temporal;
+- Documents/Evidence;
+- client-facing read models amplos;
+- produção/deploy do PFP Cockpit.
+
+## Próximo passo técnico
+
+Sincronizar a evidência/history SQL aplicada com o repositório e qualificar o bootstrap. Só depois fechar lint/build da branch do Cockpit e preparar PR de integração.
