@@ -1,15 +1,30 @@
-name: PFP D3 Strict Replay Gate — Transport Blocked
+name: PFP Cockpit Current Branch Validation
 
 on:
+  push:
+    branches:
+      - pfp-bootstrap-replay-proof-byteexact-2026-09-14
+    paths:
+      - '.github/workflows/pfp-bootstrap-replay-proof.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  status:
+  validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: pfp-ci-placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: pfp-ci-placeholder-service-role-key
     steps:
-      - name: Report strict replay gate status
-        run: |
-          echo 'PC-INDEPENDENT-BOOTSTRAP-REPLAY-GATE-001=OPEN'
-          echo 'Reason: exact D3 ledger SQL is canonical, but no safe direct Supabase-to-GitHub file transport is available through current connectors.'
-          echo 'Do not use superseded binary archives or oversized manual Base64 chunks.'
-          echo 'Qualified Gate 0 standalone bootstrap remains valid and separate from this strict 30-migration replay gate.'
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
