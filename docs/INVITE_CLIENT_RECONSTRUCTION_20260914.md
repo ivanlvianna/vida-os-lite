@@ -50,15 +50,38 @@ This record does **not** claim:
 
 ## Validation status
 
-At creation time:
+Current status:
 - source candidate: **IMPLEMENTED**
-- Vercel build: **PENDING**
+- Vercel Preview build: **PASS**
+- diff scope audit: **PASS — exactly 3 changed files**
 - live side-effect test: **NOT RUN**
 - Production mutation: **ZERO**
+- D3 mutation: **ZERO**
+
+## Contract validation matrix
+
+The following cases are the acceptance matrix for the candidate before any controlled live invitation is considered:
+
+| Case | Principal / input | Expected result | Side effect allowed |
+|---|---|---|---|
+| IC-01 | unauthenticated principal | `AUTH_REQUIRED` before Auth admin call | none |
+| IC-02 | authenticated principal without account-scoped `planner_owner` | `FORBIDDEN` before Auth admin call | none |
+| IC-03 | authenticated account-scoped `planner_owner` + valid email | exactly one `auth.admin.inviteUserByEmail(email, options)` call and returned Auth user id | simulated admin client only |
+| IC-04 | successful invitation path | no membership creation and no authorization grant inside `InviteClientWorkflow` | none beyond invitation operation |
+
+Repository note: there is currently no dedicated test framework/script in `package.json`. No new Jest/Vitest infrastructure is introduced solely for this reconstruction. The application build provides TypeScript compilation coverage; the matrix above remains the explicit behavioral contract for a simulated harness or controlled live validation.
+
+## Governance checkpoint
+
+Draft PR: `#10`  
+Base: `app-services-prereqs-2026-09-14`  
+Head: `invite-client-reconstruction-2026-09-14`
+
+PR #10 is intentionally Draft. No merge is authorized by this record.
 
 ## Next safe validation
 
-1. require build/type-check success;
-2. inspect diff for scope leakage;
-3. run a simulated admin-client contract test without sending email;
-4. only then decide whether a controlled live D3 invitation test is warranted.
+1. keep PR #10 in Draft;
+2. verify the final Preview build after documentation update;
+3. verify PR diff/mergeability after GitHub recalculates state;
+4. do not send a real invitation until an explicit controlled D3 live-test decision is made.
