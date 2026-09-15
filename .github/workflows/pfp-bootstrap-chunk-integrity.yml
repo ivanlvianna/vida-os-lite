@@ -1,32 +1,15 @@
-name: PFP Bootstrap Chunk Integrity
+name: PFP Bootstrap Chunk Integrity — Superseded
 
 on:
-  push:
-    branches:
-      - pfp-bootstrap-replay-proof-byteexact-2026-09-14
   workflow_dispatch:
 
 jobs:
-  chunks:
+  superseded:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Verify every Base64 text chunk
-        shell: bash
+      - name: Superseded transport notice
         run: |
-          set -euo pipefail
-          C=supabase/bootstrap/byteexact_chunks
-          cat > /tmp/chunks.sha256 <<'EOF'
-          f946d57c1134daab9daaefcc49c55028cfb95e3cc9176260a669bf310371945d  supabase/bootstrap/byteexact_chunks/v06_01.b64part
-          413467d9576fe52c25d39dcfc24f7a1b0fd15d4424585ff30aeaf1a3d062231f  supabase/bootstrap/byteexact_chunks/v06_02.b64part
-          61b504e5a844d848ee49c52eff1aebad64b38635b59e8b894bd5dbaab82aea70  supabase/bootstrap/byteexact_chunks/v06_03.b64part
-          eaa02d08dbcc28211e05a959679a3cfa27e796bd70918c05fde084f9c55c2e36  supabase/bootstrap/byteexact_chunks/v06_04a.b64part
-          f43e61b2c046eeeccbd988144f59d1c475dd67c46fd78f101ea385b70064050c  supabase/bootstrap/byteexact_chunks/v06_04b.b64part
-          b2b873a225bdb9e17d190ac52e2254c4673de9c746d86a8849fec90123ee1fb4  supabase/bootstrap/byteexact_chunks/v06_05.b64part
-          b5e3e3f906bf4991c7a49112613845a584efd48111c94185b4543e74983fb536  supabase/bootstrap/byteexact_chunks/pchist_01.b64part
-          fa2505317bf6f6580553416b8ff84db2051fe6007d10a018700f924437719f4c  supabase/bootstrap/byteexact_chunks/pchist_02.b64part
-          b83decff2ff17784c092b52a2f09fadd89fb1936790c5caa329277e75f2deccf  supabase/bootstrap/byteexact_chunks/pchist_03.b64part
-          7f42d803f9188c5bdddf3c6458483e070f604c3518e9a3dfd60a310460b6d44d  supabase/bootstrap/byteexact_chunks/pchist_04.b64part
-          c487635c026a1b533d42f9f1617ce9fac6a7123b6f4fa5ac3faaf662736dd46f  supabase/bootstrap/byteexact_chunks/pchist_05.b64part
-          EOF
-          sha256sum -c /tmp/chunks.sha256
+          echo 'This binary chunk transport is no longer an admissible replay source.'
+          echo 'The canonical source is the applied SQL retained in D3 supabase_migrations.schema_migrations.'
+          echo 'See supabase/history/D3_CANONICAL_MIGRATION_LEDGER_20260915.md.'
+          exit 1
