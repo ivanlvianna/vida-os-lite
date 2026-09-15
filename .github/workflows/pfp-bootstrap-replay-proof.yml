@@ -32,3 +32,5 @@ jobs:
           verify '20260915010615_pc_performance_targeted_indexes_v1' 1469 95cf1962dfec09bb69bdc07587c8da3b
           verify '20260915022715_pc_m09_staff_summary_visibility_fix' 2757 ad3e1bef37e6a75ebc4ca0d1761ccd08
           echo 'D3_LEDGER_TEXT_TRANSPORT_SAMPLE_PASS'
+      - name: Mark transport sample complete
+        run: echo 'transport sample verified at current branch head'
