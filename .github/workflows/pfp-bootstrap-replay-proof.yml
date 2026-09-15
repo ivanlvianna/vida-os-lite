@@ -1,26 +1,15 @@
-name: PFP D3 Core v0.6 Part Transport Proof
+name: PFP D3 Strict Replay Gate — Transport Blocked
 
 on:
-  push:
-    branches:
-      - pfp-bootstrap-replay-proof-byteexact-2026-09-14
-    paths:
-      - '.github/workflows/pfp-bootstrap-replay-proof.yml'
   workflow_dispatch:
 
 jobs:
-  verify:
+  status:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Verify D3 core v0.6 part 1 exact bytes
-        shell: bash
+      - name: Report strict replay gate status
         run: |
-          set -euo pipefail
-          F='supabase/bootstrap/d3_ledger_exact/20260913203935_v0_6_clean_install_vida_os_homologacao.part1.sql'
-          got_bytes="$(wc -c < "$F" | tr -d ' ')"
-          got_md5="$(md5sum "$F" | awk '{print $1}')"
-          echo "part1 bytes=$got_bytes md5=$got_md5"
-          test "$got_bytes" = '17052'
-          test "$got_md5" = 'd5eac4e58c4a36d25ab408c19ce8bbdf'
-          echo 'D3_CORE_V06_PART1_TRANSPORT_PASS'
+          echo 'PC-INDEPENDENT-BOOTSTRAP-REPLAY-GATE-001=OPEN'
+          echo 'Reason: exact D3 ledger SQL is canonical, but no safe direct Supabase-to-GitHub file transport is available through current connectors.'
+          echo 'Do not use superseded binary archives or oversized manual Base64 chunks.'
+          echo 'Qualified Gate 0 standalone bootstrap remains valid and separate from this strict 30-migration replay gate.'
