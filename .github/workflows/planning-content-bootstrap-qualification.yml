@@ -1,0 +1,113 @@
+name: Planning Content Bootstrap Qualification
+
+on:
+  push:
+    branches:
+      - pfp-cockpit-read-integration-2026-09-14
+    paths:
+      - '.github/workflows/planning-content-bootstrap-qualification.yml'
+      - 'supabase/bootstrap/**'
+      - 'supabase/history/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vida_bootstrap
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vida_bootstrap"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: vida_bootstrap
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client-17 || sudo apt-get install -y postgresql-client
+
+      - name: Verify preserved artifact hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '67aa021b044a4549a7e38e4fae925297440e99377475bcc003f6fda2fdfe33b1  supabase/bootstrap/VIDA_OS_CORE_V0_6_CANONICAL_20260914.sql.gz' | sha256sum -c -
+          echo 'bfff89688a1490c00ddcb6dd1118982217ba2075db921c6500bb06aaeae7ab4c  supabase/history/archives/PLANNING_CONTENT_EXACT_APPLIED_HISTORY_20260914.tar.gz' | sha256sum -c -
+
+      - name: Create minimal Supabase auth compatibility layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          DO $roles$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role NOLOGIN; END IF;
+          END;
+          $roles$;
+
+          CREATE SCHEMA auth;
+          CREATE TABLE auth.users (
+            id uuid PRIMARY KEY,
+            email text
+          );
+
+          CREATE OR REPLACE FUNCTION auth.uid()
+          RETURNS uuid
+          LANGUAGE sql
+          STABLE
+          AS $$
+            SELECT nullif(current_setting('request.jwt.claim.sub', true),'')::uuid
+          $$;
+
+          GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role;
+          GRANT EXECUTE ON FUNCTION auth.uid() TO PUBLIC;
+          SQL
+
+      - name: Apply canonical VIDA OS v0.6
+        shell: bash
+        run: |
+          set -euo pipefail
+          gzip -dc supabase/bootstrap/VIDA_OS_CORE_V0_6_CANONICAL_20260914.sql.gz \
+            | psql -v ON_ERROR_STOP=1
+
+      - name: Apply canonical VIDA OS v0.7 onboarding extension
+        run: psql -v ON_ERROR_STOP=1 -f supabase/bootstrap/VIDA_OS_CORE_V0_7_ONBOARD_MEMBER_20260914.sql
+
+      - name: Replay 28 exact Planning Content migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          tar -xzf supabase/history/archives/PLANNING_CONTENT_EXACT_APPLIED_HISTORY_20260914.tar.gz -C "$tmp"
+          mapfile -t migrations < <(find "$tmp" -maxdepth 1 -type f -name '2026*.sql' -print | sort)
+          test "${#migrations[@]}" -eq 28
+          for migration in "${migrations[@]}"; do
+            echo "Applying $(basename "$migration")"
+            psql -v ON_ERROR_STOP=1 -f "$migration"
+          done
+
+      - name: Verify catalog fingerprint against homologated D3
+        run: psql -v ON_ERROR_STOP=1 -f supabase/bootstrap/verify_planning_content_fingerprint_20260914.sql
