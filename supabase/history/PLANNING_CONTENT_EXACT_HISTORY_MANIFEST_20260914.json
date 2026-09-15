@@ -1,0 +1,13 @@
+{
+  "migration_count_after_v0_7": 28,
+  "exact_history_archive": "supabase/history/archives/PLANNING_CONTENT_EXACT_APPLIED_HISTORY_20260914.tar.gz",
+  "exact_history_archive_sha256": "bfff89688a1490c00ddcb6dd1118982217ba2075db921c6500bb06aaeae7ab4c",
+  "bootstrap_gzip": "supabase/bootstrap/PLANNING_CONTENT_CURRENT_BOOTSTRAP_20260914.sql.gz",
+  "bootstrap_gzip_sha256": "5554d34aa84c2d62ff467753a783c55e8547ff84312eabcd89840156715ac951",
+  "bootstrap_uncompressed_sha256": "dfe05de1d4a6743e0ba467202ab651f13d3557190ae7ad0b58a895aa4130262a",
+  "m07_split_concat_equals_canonical_source": true,
+  "m07_canonical_sha256": "0bbdadca9ec5982055c9c2fa2b3386fa091677d99861f9945192169daf37c929",
+  "freeze_split_concat_equals_canonical_source": true,
+  "freeze_canonical_sha256": "6885b8d39463f08c57cc0ae2778f25ff32e54b8e3b44fdfc8fdb4f94032ba6fc",
+  "classification": "exact_ordered_sql_payloads_preserved; independent fresh-database replay still recommended"
+}
