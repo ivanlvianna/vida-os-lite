@@ -16,19 +16,6 @@ function encodeResult(result) {
   return encodeURIComponent(JSON.stringify(result))
 }
 
-async function runGrant() {
-  'use server'
-  const formData = new FormData()
-  formData.set('clientAccountId', ACCOUNT_ID)
-  formData.set('targetAuthUserId', TARGET_AUTH_USER_ID)
-  formData.set('role', 'client_participant')
-  formData.set('scopeType', 'account')
-
-  const result = await grantAccessAction(formData)
-  const authorizationId = result.ok ? result.authorizationId : ''
-  redirect(`/dashboard/e2e?step=grant&result=${encodeResult(result)}&authorizationId=${encodeURIComponent(authorizationId)}`)
-}
-
 async function runRevoke(formData) {
   'use server'
   const authorizationId = formData.get('authorizationId')
@@ -101,7 +88,12 @@ export default async function E2EPage({ searchParams }) {
       <section style={boxStyle}>
         <h2 style={{ color: '#1A3C2E' }}>1. GrantAccessWorkflow</h2>
         <p>Concede ao usuario-alvo papel <code>client_participant</code> na conta de homologacao.</p>
-        <form action={runGrant}>
+        <p style={{ fontSize: '0.86rem', color: '#666' }}>Este botao agora chama a Delivery Action diretamente, preservando os cookies da sessao autenticada.</p>
+        <form action={grantAccessAction}>
+          <input type="hidden" name="clientAccountId" value={ACCOUNT_ID} />
+          <input type="hidden" name="targetAuthUserId" value={TARGET_AUTH_USER_ID} />
+          <input type="hidden" name="role" value="client_participant" />
+          <input type="hidden" name="scopeType" value="account" />
           <button style={buttonStyle} type="submit">Executar GrantAccess</button>
         </form>
       </section>
