@@ -50,6 +50,20 @@ function assertD3ServiceRoleKey() {
   }
 }
 
+function safeCauseSummary(cause: unknown): string | null {
+  if (!cause || typeof cause !== 'object') return null
+
+  const value = cause as { message?: unknown; code?: unknown; status?: unknown; name?: unknown }
+  const parts: string[] = []
+
+  if (typeof value.name === 'string' && value.name) parts.push(`name=${value.name}`)
+  if (typeof value.code === 'string' && value.code) parts.push(`code=${value.code}`)
+  if (typeof value.status === 'number') parts.push(`status=${value.status}`)
+  if (typeof value.message === 'string' && value.message) parts.push(`message=${value.message}`)
+
+  return parts.length ? parts.join('; ') : null
+}
+
 export async function runInviteClientE2E(): Promise<InviteE2EResult> {
   try {
     assertD3ServiceRoleKey()
@@ -65,7 +79,12 @@ export async function runInviteClientE2E(): Promise<InviteE2EResult> {
     return { ok: true, authUserId: result.authUserId, email: result.email }
   } catch (error) {
     if (error instanceof VidaOsError) {
-      return { ok: false, code: error.code, message: error.message }
+      const causeSummary = safeCauseSummary(error.causeValue)
+      return {
+        ok: false,
+        code: error.code,
+        message: causeSummary ? `${error.message} [${causeSummary}]` : error.message,
+      }
     }
 
     return {
