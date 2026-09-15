@@ -11,7 +11,7 @@ export type InviteE2EResult =
   | { ok: false; code: string; message: string }
 
 const CLIENT_ACCOUNT_ID = 'c21d928b-e627-41ff-97bf-d4dd331b00c2'
-const TEST_EMAIL = 'vidaos.e2e.invite.20260914@example.com'
+const TEST_EMAIL = 'ivanlvianna@gmail.com'
 const EXPECTED_D3_REF = 'aregdlspacytbrrdowps'
 const EXPECTED_D3_URL = `https://${EXPECTED_D3_REF}.supabase.co`
 
