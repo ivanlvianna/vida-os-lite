@@ -32,11 +32,13 @@ This fingerprint is the comparison target for any future fresh-database bootstra
 ## Artifacts
 
 - exact applied-history archive: `supabase/history/archives/PLANNING_CONTENT_EXACT_APPLIED_HISTORY_20260914.tar.gz`
-- current-state concatenated bootstrap: `supabase/bootstrap/PLANNING_CONTENT_CURRENT_BOOTSTRAP_20260914.sql.gz`
+- replay helper: `supabase/bootstrap/replay_planning_content_history.sh`
 - deterministic catalog fingerprint: `supabase/history/PLANNING_CONTENT_CURRENT_CATALOG_FINGERPRINT_20260914.json`
+
+The replay helper extracts the exact-history archive, verifies that exactly 28 timestamped SQL migrations are present, sorts them by remote migration version, and applies them one by one to a disposable database already at canonical v0.7.
 
 ## Classification
 
-Repository reproducibility is now materially restored: the exact ordered SQL payloads and current catalog fingerprint are preserved.
+Repository reproducibility is now materially restored: the exact ordered SQL payloads, executable replay path, and current catalog fingerprint are preserved.
 
-A truly independent fresh PostgreSQL/Supabase instance replay remains the strongest final proof, but it is no longer necessary to reconstruct missing SQL from memory. It can be run from these preserved artifacts without touching the official homologation database.
+A truly independent fresh PostgreSQL/Supabase instance replay remains the strongest final proof, but no SQL now needs to be reconstructed from memory. The replay can be executed directly from the preserved archive without touching the official homologation database.
