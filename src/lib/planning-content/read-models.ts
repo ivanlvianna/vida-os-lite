@@ -1,6 +1,69 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { VidaOsError } from '../vida-os/errors'
 
+export const PLANNING_CONTENT_READ_MODEL_CONTRACT = {
+  summary: {
+    view: 'pc_rm_engagement_content_summary',
+    select:
+      'client_account_id,planning_engagement_id,interview_count,instrument_run_count,synthesis_count,active_hypothesis_count,accepted_hypothesis_count,open_agenda_count,session_count,report_count,current_validated_report_count,plan_count,implementation_count,review_count',
+  },
+  interview: {
+    view: 'pc_rm_interview_current',
+    select:
+      'client_account_id,planning_engagement_id,interview_record_id,current_version_id,current_version_no,current_version_recorded_at,context_narrative,objectives_narrative,draft_revision,draft_base_version_id,draft_updated_at,has_active_draft',
+  },
+  instrument: {
+    view: 'pc_rm_instrument_current',
+    select:
+      'client_account_id,planning_engagement_id,instrument_run_id,instrument_code,current_version_id,current_version_no,current_version_recorded_at,instrument_completed_at,result_envelope,contribution_count',
+  },
+  synthesis: {
+    view: 'pc_rm_synthesis_current',
+    select:
+      'client_account_id,planning_engagement_id,diagnostic_synthesis_id,current_version_id,current_version_no,current_version_recorded_at,integrated_synthesis_narrative,proposal_count',
+  },
+  hypothesis: {
+    view: 'pc_rm_working_hypothesis_current',
+    select:
+      'client_account_id,planning_engagement_id,working_hypothesis_id,origin_diagnostic_synthesis_version_id,origin_proposal_key,current_version_id,current_version_no,current_version_recorded_at,hypothesis_statement,current_state,current_state_at,draft_revision,draft_base_version_id,has_active_draft',
+  },
+  agenda: {
+    view: 'pc_rm_open_agenda_current',
+    select:
+      'client_account_id,planning_engagement_id,hypothesis_agenda_id,current_version_id,current_version_no,current_version_recorded_at,agenda_narrative,current_state,current_state_at,item_count,draft_revision,has_active_draft',
+  },
+  session: {
+    view: 'pc_rm_session_current',
+    select:
+      'client_account_id,planning_engagement_id,diagnostic_session_id,current_version_id,current_version_no,current_version_recorded_at,session_occurred_at,session_narrative,hypothesis_count,decision_note_count,draft_revision,draft_base_version_id,has_active_draft',
+  },
+  report: {
+    view: 'pc_rm_report_current',
+    select:
+      'client_account_id,planning_engagement_id,diagnostic_report_id,current_version_id,current_version_no,current_version_recorded_at,report_narrative,consensus_subject_economic_entity_id,current_state,current_state_at,latest_consensus_understood,latest_consensus_agreed,latest_consensus_at,source_session_count,hypothesis_count,draft_revision,draft_base_version_id,has_active_draft',
+  },
+  plan: {
+    view: 'pc_rm_plan_current',
+    select:
+      'client_account_id,planning_engagement_id,financial_plan_id,current_version_id,current_version_no,current_version_recorded_at,diagnostic_report_id,diagnostic_report_version_id,goal_count,strategy_count,hypothesis_count,draft_revision,draft_base_version_id,has_active_draft',
+  },
+  implementation: {
+    view: 'pc_rm_implementation_current',
+    select:
+      'client_account_id,planning_engagement_id,implementation_episode_id,current_version_id,current_version_no,current_version_recorded_at,financial_plan_id,financial_plan_version_id,implemented_at,implementation_narrative',
+  },
+  review: {
+    view: 'pc_rm_review_current',
+    select:
+      'client_account_id,planning_engagement_id,review_episode_id,current_version_id,current_version_no,current_version_recorded_at,implementation_episode_id,implementation_episode_version_id,reviewed_at,review_narrative',
+  },
+  timeline: {
+    view: 'pc_rm_engagement_timeline',
+    select:
+      'client_account_id,planning_engagement_id,occurred_at,object_type,object_id,version_or_event_id,event_key,actor_stamp_id,state',
+  },
+} as const
+
 export type EngagementContentSummary = {
   client_account_id: string
   planning_engagement_id: string
@@ -206,27 +269,28 @@ function failRead(view: string, error: unknown): never {
 
 async function listRows<T>(
   supabase: SupabaseClient,
-  view: string,
+  contract: { readonly view: string; readonly select: string },
   planningEngagementId: string
 ): Promise<T[]> {
   const { data, error } = await supabase
-    .from(view)
-    .select('*')
+    .from(contract.view)
+    .select(contract.select)
     .eq('planning_engagement_id', planningEngagementId)
 
-  if (error) failRead(view, error)
+  if (error) failRead(contract.view, error)
   return (data ?? []) as T[]
 }
 
 export async function listPfpEngagementSummaries(
   supabase: SupabaseClient
 ): Promise<EngagementContentSummary[]> {
+  const contract = PLANNING_CONTENT_READ_MODEL_CONTRACT.summary
   const { data, error } = await supabase
-    .from('pc_rm_engagement_content_summary')
-    .select('*')
+    .from(contract.view)
+    .select(contract.select)
     .order('planning_engagement_id', { ascending: true })
 
-  if (error) failRead('pc_rm_engagement_content_summary', error)
+  if (error) failRead(contract.view, error)
   return (data ?? []) as EngagementContentSummary[]
 }
 
@@ -234,18 +298,17 @@ export async function loadPfpCockpitSnapshot(
   supabase: SupabaseClient,
   planningEngagementId: string
 ): Promise<PfpCockpitSnapshot | null> {
+  const summaryContract = PLANNING_CONTENT_READ_MODEL_CONTRACT.summary
   const summaryResult = await supabase
-    .from('pc_rm_engagement_content_summary')
-    .select('*')
+    .from(summaryContract.view)
+    .select(summaryContract.select)
     .eq('planning_engagement_id', planningEngagementId)
     .maybeSingle()
 
-  if (summaryResult.error) {
-    failRead('pc_rm_engagement_content_summary', summaryResult.error)
-  }
-
+  if (summaryResult.error) failRead(summaryContract.view, summaryResult.error)
   if (!summaryResult.data) return null
 
+  const c = PLANNING_CONTENT_READ_MODEL_CONTRACT
   const [
     interviews,
     instruments,
@@ -258,35 +321,26 @@ export async function loadPfpCockpitSnapshot(
     implementations,
     reviews,
   ] = await Promise.all([
-    listRows<InterviewCurrent>(supabase, 'pc_rm_interview_current', planningEngagementId),
-    listRows<InstrumentCurrent>(supabase, 'pc_rm_instrument_current', planningEngagementId),
-    listRows<SynthesisCurrent>(supabase, 'pc_rm_synthesis_current', planningEngagementId),
-    listRows<WorkingHypothesisCurrent>(
-      supabase,
-      'pc_rm_working_hypothesis_current',
-      planningEngagementId
-    ),
-    listRows<OpenAgendaCurrent>(supabase, 'pc_rm_open_agenda_current', planningEngagementId),
-    listRows<SessionCurrent>(supabase, 'pc_rm_session_current', planningEngagementId),
-    listRows<ReportCurrent>(supabase, 'pc_rm_report_current', planningEngagementId),
-    listRows<PlanCurrent>(supabase, 'pc_rm_plan_current', planningEngagementId),
-    listRows<ImplementationCurrent>(
-      supabase,
-      'pc_rm_implementation_current',
-      planningEngagementId
-    ),
-    listRows<ReviewCurrent>(supabase, 'pc_rm_review_current', planningEngagementId),
+    listRows<InterviewCurrent>(supabase, c.interview, planningEngagementId),
+    listRows<InstrumentCurrent>(supabase, c.instrument, planningEngagementId),
+    listRows<SynthesisCurrent>(supabase, c.synthesis, planningEngagementId),
+    listRows<WorkingHypothesisCurrent>(supabase, c.hypothesis, planningEngagementId),
+    listRows<OpenAgendaCurrent>(supabase, c.agenda, planningEngagementId),
+    listRows<SessionCurrent>(supabase, c.session, planningEngagementId),
+    listRows<ReportCurrent>(supabase, c.report, planningEngagementId),
+    listRows<PlanCurrent>(supabase, c.plan, planningEngagementId),
+    listRows<ImplementationCurrent>(supabase, c.implementation, planningEngagementId),
+    listRows<ReviewCurrent>(supabase, c.review, planningEngagementId),
   ])
 
+  const timelineContract = c.timeline
   const timelineResult = await supabase
-    .from('pc_rm_engagement_timeline')
-    .select('*')
+    .from(timelineContract.view)
+    .select(timelineContract.select)
     .eq('planning_engagement_id', planningEngagementId)
     .order('occurred_at', { ascending: false })
 
-  if (timelineResult.error) {
-    failRead('pc_rm_engagement_timeline', timelineResult.error)
-  }
+  if (timelineResult.error) failRead(timelineContract.view, timelineResult.error)
 
   return {
     summary: summaryResult.data as EngagementContentSummary,
