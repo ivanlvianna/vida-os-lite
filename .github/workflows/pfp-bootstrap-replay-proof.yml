@@ -1,4 +1,4 @@
-name: PFP Current Planning Bootstrap Diagnostic
+name: PFP Supabase Credential Presence Probe
 
 on:
   push:
@@ -9,22 +9,30 @@ on:
   workflow_dispatch:
 
 jobs:
-  diagnose:
+  probe:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - name: Validate current Planning Content bootstrap
+      - name: Report presence only
         shell: bash
         run: |
           set -euo pipefail
-          BOOT='supabase/bootstrap/PLANNING_CONTENT_CURRENT_BOOTSTRAP_20260914.sql.gz'
-          echo "FILE_BYTES=$(wc -c < "$BOOT")"
-          echo "FILE_SHA256=$(sha256sum "$BOOT" | awk '{print $1}')"
-          file "$BOOT"
-          gzip -t "$BOOT"
-          echo 'GZIP_READABLE=YES'
-          gunzip -c "$BOOT" > /tmp/planning_content_current.sql
-          echo "SQL_BYTES=$(wc -c < /tmp/planning_content_current.sql)"
-          echo "SQL_SHA256=$(sha256sum /tmp/planning_content_current.sql | awk '{print $1}')"
-          grep -Eci 'create[[:space:]]+(table|view|or replace function)' /tmp/planning_content_current.sql
-          head -n 5 /tmp/planning_content_current.sql
+          for name in DATABASE_URL SUPABASE_DB_URL SUPABASE_DATABASE_URL SUPABASE_DB_PASSWORD SUPABASE_ACCESS_TOKEN; do
+            if [ -n "${!name:-}" ]; then echo "$name=PRESENT"; else echo "$name=ABSENT"; fi
+          done
+      - name: Read canonical ledger if a database URL is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="${SUPABASE_DB_URL:-${SUPABASE_DATABASE_URL:-${DATABASE_URL:-}}}"
+          if [ -z "$URL" ]; then
+            echo 'NO_DATABASE_URL_AVAILABLE'
+            exit 0
+          fi
+          psql "$URL" -v ON_ERROR_STOP=1 -Atc "select count(*)||'|'||min(version)||'|'||max(version) from supabase_migrations.schema_migrations;"
