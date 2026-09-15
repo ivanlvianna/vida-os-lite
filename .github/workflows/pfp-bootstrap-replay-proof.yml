@@ -1,4 +1,4 @@
-name: PFP Bootstrap Replay Proof — Isolate Invalid Chunks
+name: PFP Bootstrap Replay Proof — Recover Missing Base64 Character
 
 on:
   push:
@@ -9,31 +9,36 @@ on:
   workflow_dispatch:
 
 jobs:
-  diagnose:
+  recover:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate each Base64 chunk independently
+      - name: Brute force missing final Base64 character
         shell: bash
         run: |
-          set -u
+          set -euo pipefail
           C=supabase/bootstrap/byteexact_chunks
-          rc=0
-          for f in \
-            "$C/v06_01.b64part" "$C/v06_02.b64part" "$C/v06_03.b64part" \
-            "$C/v06_04a.b64part" "$C/v06_04b.b64part" "$C/v06_05.b64part" \
-            "$C/pchist_01.b64part" "$C/pchist_02.b64part" "$C/pchist_03.b64part" \
-            "$C/pchist_04.b64part" "$C/pchist_05.b64part"
-          do
-            chars="$(wc -c < "$f")"
-            sha="$(sha256sum "$f" | awk '{print $1}')"
-            if base64 -d "$f" >/tmp/out.bin 2>/tmp/base64.err; then
-              bytes="$(wc -c </tmp/out.bin)"
-              echo "VALID|$f|chars=$chars|decoded_bytes=$bytes|sha256=$sha"
-            else
-              err="$(tr '\n' ' ' </tmp/base64.err)"
-              echo "INVALID|$f|chars=$chars|sha256=$sha|error=$err"
-              rc=1
+          expected='bfff89688a1490c00ddcb6dd1118982217ba2075db921c6500bb06aaeae7ab4c'
+          alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+          base="$(cat "$C/pchist_02.b64part")"
+          found=''
+          for ((i=0; i<${#alphabet}; i++)); do
+            ch="${alphabet:$i:1}"
+            {
+              cat "$C/pchist_01.b64part"
+              printf '%s%s' "$base" "$ch"
+              cat "$C/pchist_03.b64part" "$C/pchist_04.b64part" "$C/pchist_05.b64part"
+            } | base64 -d >/tmp/candidate.tar.gz 2>/dev/null || continue
+            sha="$(sha256sum /tmp/candidate.tar.gz | awk '{print $1}')"
+            if [ "$sha" = "$expected" ]; then
+              found="$ch"
+              echo "RECOVERED_CHARACTER=$ch"
+              echo "RECOVERED_SHA256=$sha"
+              tar -tzf /tmp/candidate.tar.gz >/tmp/list.txt
+              count="$(grep -Ec '(^|/)2026[0-9]+_.*\.sql$' /tmp/list.txt)"
+              echo "RECOVERED_SQL_COUNT=$count"
+              test "$count" -eq 28
+              break
             fi
           done
-          exit "$rc"
+          test -n "$found"
