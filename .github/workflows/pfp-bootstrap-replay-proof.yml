@@ -2,6 +2,9 @@ name: PFP D3 Strict 30-Migration Clean-Room Replay
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - pfp-bootstrap-replay-proof-byteexact-2026-09-14
 
 jobs:
   replay:
