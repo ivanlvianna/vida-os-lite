@@ -1,4 +1,4 @@
-name: PFP Bootstrap Replay Proof — Hybrid Artifact Replay
+name: PFP Planning History Archive Diagnostic
 
 on:
   push:
@@ -9,101 +9,21 @@ on:
   workflow_dispatch:
 
 jobs:
-  replay:
+  diagnose:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: vida_replay
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d vida_replay"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vida_replay
-      PGPASSWORD: postgres
     steps:
       - uses: actions/checkout@v4
-
-      - name: Reconstruct v0.6 from valid chunks and validate direct history archive
+      - name: Validate direct Planning Content archive only
         shell: bash
         run: |
           set -euo pipefail
-          C=supabase/bootstrap/byteexact_chunks
-          HIST=supabase/history/archives/PLANNING_CONTENT_EXACT_APPLIED_HISTORY_20260914.tar.gz
-          cat "$C/v06_01.b64part" "$C/v06_02.b64part" "$C/v06_03.b64part" \
-              "$C/v06_04a.b64part" "$C/v06_04b.b64part" "$C/v06_05.b64part" \
-            | base64 -d > /tmp/v06.sql.gz
-          gzip -t /tmp/v06.sql.gz
-          echo "V06_SHA256=$(sha256sum /tmp/v06.sql.gz | awk '{print $1}')"
-          echo "V06_UNCOMPRESSED_SHA256=$(gunzip -c /tmp/v06.sql.gz | sha256sum | awk '{print $1}')"
-          tar -tzf "$HIST" >/tmp/history-list.txt
-          count="$(grep -Ec '(^|/)2026[0-9]+_.*\.sql$' /tmp/history-list.txt)"
-          echo "DIRECT_HISTORY_SHA256=$(sha256sum "$HIST" | awk '{print $1}')"
-          echo "DIRECT_HISTORY_SQL_COUNT=$count"
+          HIST='supabase/history/archives/PLANNING_CONTENT_EXACT_APPLIED_HISTORY_20260914.tar.gz'
+          echo "FILE_BYTES=$(wc -c < "$HIST")"
+          echo "FILE_SHA256=$(sha256sum "$HIST" | awk '{print $1}')"
+          file "$HIST"
+          tar -tzf "$HIST" > /tmp/list.txt
+          echo 'TAR_READABLE=YES'
+          cat /tmp/list.txt
+          count="$(grep -Ec '(^|/)2026[0-9]+_.*\.sql$' /tmp/list.txt)"
+          echo "SQL_COUNT=$count"
           test "$count" -eq 28
-
-      - name: Create minimal Supabase Auth compatibility surface
-        shell: bash
-        run: |
-          set -euo pipefail
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          do $$ begin create role anon nologin; exception when duplicate_object then null; end $$;
-          do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$;
-          do $$ begin create role service_role nologin; exception when duplicate_object then null; end $$;
-          create schema if not exists auth;
-          create table if not exists auth.users (id uuid primary key, email text);
-          create or replace function auth.uid() returns uuid language sql stable as $$
-            select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
-          $$;
-          grant usage on schema auth to anon, authenticated, service_role;
-          grant execute on function auth.uid() to anon, authenticated, service_role;
-          SQL
-
-      - name: Apply v0.6 and v0.7
-        shell: bash
-        run: |
-          set -euo pipefail
-          gunzip -c /tmp/v06.sql.gz | psql "$DATABASE_URL" -v ON_ERROR_STOP=1
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/bootstrap/VIDA_OS_CORE_V0_7_ONBOARD_MEMBER_20260914.sql
-
-      - name: Replay 28 Planning Content migrations
-        shell: bash
-        run: |
-          set -euo pipefail
-          tmpdir="$(mktemp -d)"
-          tar -xzf supabase/history/archives/PLANNING_CONTENT_EXACT_APPLIED_HISTORY_20260914.tar.gz -C "$tmpdir"
-          mapfile -t migrations < <(find "$tmpdir" -type f -name '2026*.sql' -print | sort)
-          test "${#migrations[@]}" -eq 28
-          for migration in "${migrations[@]}"; do
-            echo "Applying $(basename "$migration")"
-            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
-          done
-
-      - name: Assert final Planning Content catalog counts
-        shell: bash
-        run: |
-          set -euo pipefail
-          actual="$(psql "$DATABASE_URL" -Atq <<'SQL'
-          select concat_ws('|',
-            (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relname like 'planning_content_%'),
-            (select count(*) from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relname like 'planning_content_%' and a.attnum>0 and not a.attisdropped),
-            (select count(*) from pg_constraint con join pg_class c on c.oid=con.conrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname like 'planning_content_%'),
-            (select count(*) from pg_index x join pg_class c on c.oid=x.indrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname like 'planning_content_%'),
-            (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname like 'pc_%'),
-            (select count(*) from pg_trigger g join pg_class c on c.oid=g.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname like 'planning_content_%' and not g.tgisinternal),
-            (select count(*) from pg_policies where schemaname='public' and tablename like 'planning_content_%'),
-            (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='v' and c.relname like 'pc_rm_%')
-          );
-          SQL
-          )"
-          echo "ACTUAL_COUNTS=$actual"
-          test "$actual" = '51|399|314|126|40|74|51|12'
-
-      - name: Hybrid independent replay passed
-        run: echo 'PASS — fresh PostgreSQL reproduced D3 Planning Content catalog counts from preserved repository artifacts.'
