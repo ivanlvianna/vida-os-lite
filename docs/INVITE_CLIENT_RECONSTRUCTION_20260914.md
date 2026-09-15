@@ -84,6 +84,22 @@ This 429 is classified as an **external transport/rate-limit blocker**, not as e
 
 No successful invitation may be claimed until a later attempt returns an Auth user id and the resulting D3 state is verified.
 
+## Controlled branch reconciliation — 2026-09-15
+
+The candidate branch `invite-client-reconstruction-2026-09-14` was compared against the live E2E branch `app-services-live-e2e-2026-09-14` before any promotion decision.
+
+Result:
+- `src/lib/vida-os/service-role-authorization.ts` is byte-identical across the two branches;
+- the executable logic of `src/app-services/invite-client.ts` is functionally identical across the two branches;
+- the reconstruction branch intentionally retains the provenance/comment block that identifies the source as a controlled reconstruction;
+- the additional files under `src/app/dashboard/invite-e2e/` are temporary homologation infrastructure and are **not** part of the reconstructed Application Service contract;
+- the D3-specific administrative-key guard and diagnostic error exposure belong only to the temporary E2E harness and are **not** to be promoted into PR #10;
+- the general Application Services live-E2E evidence documents belong to the broader live validation branch and are not part of the three-file PR #10 candidate.
+
+Conclusion: **no executable code promotion from the live E2E branch into PR #10 is required at this checkpoint**. The candidate contract already matches the code path exercised by the live test. The remaining blocker is observational completion of the external invitation side effect after the Supabase email rate limit clears.
+
+This reconciliation also confirms that the two branches are not to be merged wholesale. Their purposes are different: PR #10 carries the minimal controlled reconstruction candidate; `app-services-live-e2e-2026-09-14` carries temporary Delivery Layer and homologation artifacts.
+
 ## Contract validation matrix
 
 The following cases are the acceptance matrix for the candidate before any controlled live invitation is considered complete:
