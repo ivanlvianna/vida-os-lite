@@ -95,3 +95,7 @@ The branch is connected to Vercel and a preview deployment is being evaluated by
 ## Next safe action
 
 Establish a dedicated authenticated D3 planner test session and a canonical Planning Engagement fixture, then execute the three Delivery Layer actions against a non-production runtime built from this branch. Preserve before/after evidence and clean up only through approved domain paths.
+
+## Runtime refresh marker
+
+A documentation-only commit was made after configuring branch-scoped Vercel Preview variables for D3, solely to force a fresh Preview build from `app-services-live-e2e-2026-09-14`. No application logic, database object, migration, RLS policy or production setting is changed by this marker.
