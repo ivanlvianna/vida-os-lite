@@ -1,15 +1,144 @@
-name: PFP D3 Strict Replay Gate — Transport Blocked
+name: PFP D3 Strict 30-Migration Clean-Room Replay
 
 on:
   workflow_dispatch:
 
 jobs:
-  status:
+  replay:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: replay
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d replay"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: replay
+
     steps:
-      - name: Report strict replay gate status
+      - uses: actions/checkout@v4
+
+      - name: Reassemble and verify canonical D3 ledger envelope
+        shell: bash
         run: |
-          echo 'PC-INDEPENDENT-BOOTSTRAP-REPLAY-GATE-001=OPEN'
-          echo 'Reason: exact D3 ledger SQL is canonical, but no safe direct Supabase-to-GitHub file transport is available through current connectors.'
-          echo 'Do not use superseded binary archives or oversized manual Base64 chunks.'
-          echo 'Qualified Gate 0 standalone bootstrap remains valid and separate from this strict 30-migration replay gate.'
+          set -euo pipefail
+          cat \
+            supabase/bootstrap/d3_ledger_transport/D3_LEDGER_ENVELOPE.part01.b64 \
+            supabase/bootstrap/d3_ledger_transport/D3_LEDGER_ENVELOPE.part02.b64 \
+            > /tmp/d3-envelope.b64
+          test "$(wc -c < /tmp/d3-envelope.b64 | tr -d ' ')" = "48248"
+          test "$(md5sum /tmp/d3-envelope.b64 | awk '{print $1}')" = "f00169d1011603481fcaa4677d5977bb"
+
+      - name: Prepare minimal Supabase platform surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          create schema if not exists extensions;
+          create extension if not exists pgcrypto with schema extensions;
+          alter schema public owner to postgres;
+
+          do $$
+          begin
+            if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
+            if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
+            if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if;
+            if not exists (select 1 from pg_roles where rolname='authenticator') then create role authenticator nologin; end if;
+          end $$;
+
+          create schema if not exists auth authorization postgres;
+          create table if not exists auth.users (
+            id uuid primary key,
+            email text,
+            raw_app_meta_data jsonb,
+            raw_user_meta_data jsonb,
+            created_at timestamptz default now(),
+            updated_at timestamptz default now()
+          );
+
+          create or replace function auth.uid() returns uuid
+          language sql stable
+          as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+
+          create or replace function auth.role() returns text
+          language sql stable
+          as $$ select nullif(current_setting('request.jwt.claim.role', true), '') $$;
+
+          create or replace function auth.jwt() returns jsonb
+          language sql stable
+          as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb) $$;
+          SQL
+
+      - name: Decrypt, parse and verify all 30 canonical migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          B64="$(cat /tmp/d3-envelope.b64)"
+          psql -v ON_ERROR_STOP=1 -qAt -v b64="$B64" \
+            -c "select extensions.pgp_sym_decrypt(decode(:'b64','base64'),'vida-cleanroom-transport-only');" \
+            > /tmp/d3-ledger.raw
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, re
+
+          raw = Path('/tmp/d3-ledger.raw').read_bytes()
+          expected_md5 = 'b8f75982e6a89f4a001cae8ae8f42f3a'
+          expected_bytes = 331779
+          if len(raw) == expected_bytes + 1 and raw.endswith(b'\n'):
+              raw = raw[:-1]
+          assert len(raw) == expected_bytes, (len(raw), expected_bytes)
+          assert hashlib.md5(raw).hexdigest() == expected_md5
+
+          text = raw.decode('utf-8')
+          pattern = re.compile(
+              r'@@VIDA_MIGRATION_BEGIN@@([^|\n]+)\|([^|\n]+)\|(\d+)\|([0-9a-f]{32})\n'
+              r'(.*?)\n@@VIDA_MIGRATION_END@@\1\n',
+              re.S,
+          )
+          matches = list(pattern.finditer(text))
+          assert len(matches) == 30, len(matches)
+          out = Path('/tmp/d3-migrations')
+          out.mkdir()
+          versions=[]
+          for m in matches:
+              version, name, size_s, md5_expected, sql = m.groups()
+              data = sql.encode('utf-8')
+              assert len(data) == int(size_s), (version, len(data), size_s)
+              assert hashlib.md5(data).hexdigest() == md5_expected, version
+              versions.append(version)
+              (out / f'{version}_{name}.sql').write_bytes(data)
+          assert versions == sorted(versions)
+          print('PASS: 30 migrations parsed and individually byte/hash verified')
+          PY
+
+      - name: Apply canonical migrations in exact D3 order
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in $(find /tmp/d3-migrations -maxdepth 1 -type f -name '*.sql' | sort); do
+            echo "APPLY $(basename "$f")"
+            psql -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Compare full catalog fingerprint with D3 oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESULT="$(psql -qAt -f supabase/bootstrap/SCHEMA_EQUIVALENCE_QUERY.sql)"
+          echo "clean-room=$RESULT"
+          test "$RESULT" = "2c9a1f3ea0e4fc5e363b91c6677ac9bf|2234"
+          echo 'PC-INDEPENDENT-BOOTSTRAP-REPLAY-GATE-001=PASS'
