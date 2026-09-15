@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - p0-functional-integration
-      - pfp-cockpit-read-integration-2026-09-14
   workflow_dispatch:
 
 permissions:
