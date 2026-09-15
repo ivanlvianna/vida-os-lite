@@ -1,4 +1,4 @@
-name: PFP Bootstrap Replay Proof — Chunk Semantic Diagnostic
+name: PFP Bootstrap Replay Proof — Isolate Invalid Chunks
 
 on:
   push:
@@ -13,34 +13,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Reconstruct artifacts and test semantic readability
+      - name: Validate each Base64 chunk independently
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
           C=supabase/bootstrap/byteexact_chunks
-
-          cat "$C/v06_01.b64part" "$C/v06_02.b64part" "$C/v06_03.b64part" \
-              "$C/v06_04a.b64part" "$C/v06_04b.b64part" "$C/v06_05.b64part" \
-            | base64 -d > /tmp/v06.sql.gz
-
-          cat "$C/pchist_01.b64part" "$C/pchist_02.b64part" "$C/pchist_03.b64part" \
-              "$C/pchist_04.b64part" "$C/pchist_05.b64part" \
-            | base64 -d > /tmp/planning-content-history.tar.gz
-
-          echo "reconstructed v0.6 sha256=$(sha256sum /tmp/v06.sql.gz | awk '{print $1}')"
-          echo "reconstructed history sha256=$(sha256sum /tmp/planning-content-history.tar.gz | awk '{print $1}')"
-          echo "reconstructed v0.6 bytes=$(wc -c </tmp/v06.sql.gz)"
-          echo "reconstructed history bytes=$(wc -c </tmp/planning-content-history.tar.gz)"
-
-          gzip -t /tmp/v06.sql.gz
-          echo 'V06_GZIP_READABLE=YES'
-
-          tar -tzf /tmp/planning-content-history.tar.gz >/tmp/history-list.txt
-          count="$(grep -Ec '(^|/)2026[0-9]+_.*\.sql$' /tmp/history-list.txt)"
-          echo "HISTORY_TAR_READABLE=YES"
-          echo "HISTORY_SQL_COUNT=$count"
-          test "$count" -eq 28
-
-          gunzip -c /tmp/v06.sql.gz | sha256sum | sed 's/^/v0.6 uncompressed sha256=/'
-          tar -xzf /tmp/planning-content-history.tar.gz -C /tmp
-          find /tmp -type f -name '2026*.sql' -print0 | sort -z | xargs -0 cat | sha256sum | sed 's/^/history concatenated SQL sha256=/'
+          rc=0
+          for f in \
+            "$C/v06_01.b64part" "$C/v06_02.b64part" "$C/v06_03.b64part" \
+            "$C/v06_04a.b64part" "$C/v06_04b.b64part" "$C/v06_05.b64part" \
+            "$C/pchist_01.b64part" "$C/pchist_02.b64part" "$C/pchist_03.b64part" \
+            "$C/pchist_04.b64part" "$C/pchist_05.b64part"
+          do
+            chars="$(wc -c < "$f")"
+            sha="$(sha256sum "$f" | awk '{print $1}')"
+            if base64 -d "$f" >/tmp/out.bin 2>/tmp/base64.err; then
+              bytes="$(wc -c </tmp/out.bin)"
+              echo "VALID|$f|chars=$chars|decoded_bytes=$bytes|sha256=$sha"
+            else
+              err="$(tr '\n' ' ' </tmp/base64.err)"
+              echo "INVALID|$f|chars=$chars|sha256=$sha|error=$err"
+              rc=1
+            fi
+          done
+          exit "$rc"
