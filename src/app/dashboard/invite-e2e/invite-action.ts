@@ -13,16 +13,31 @@ export type InviteE2EResult =
 const CLIENT_ACCOUNT_ID = 'c21d928b-e627-41ff-97bf-d4dd331b00c2'
 const TEST_EMAIL = 'vidaos.e2e.invite.20260914@example.com'
 const EXPECTED_D3_REF = 'aregdlspacytbrrdowps'
+const EXPECTED_D3_URL = `https://${EXPECTED_D3_REF}.supabase.co`
 
 function assertD3ServiceRoleKey() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!key) {
-    throw new VidaOsError('MISSING_SERVER_CONFIGURATION', 'D3 service-role key is not configured.')
+
+  if (!url || !key) {
+    throw new VidaOsError('MISSING_SERVER_CONFIGURATION', 'D3 server configuration is incomplete.')
   }
 
+  if (url !== EXPECTED_D3_URL) {
+    throw new VidaOsError('MISSING_SERVER_CONFIGURATION', 'Supabase URL is not the D3 homologation project. Invite blocked safely.')
+  }
+
+  // Modern Supabase secret keys are opaque sb_secret_... values and do not
+  // contain a JWT payload with the project ref. The exact D3 project is
+  // therefore pinned by NEXT_PUBLIC_SUPABASE_URL above.
+  if (key.startsWith('sb_secret_')) {
+    return
+  }
+
+  // Backward-compatible validation for legacy service_role JWT keys.
   const parts = key.split('.')
   if (parts.length !== 3) {
-    throw new VidaOsError('MISSING_SERVER_CONFIGURATION', 'Service-role key format cannot be verified safely for D3.')
+    throw new VidaOsError('MISSING_SERVER_CONFIGURATION', 'Administrative key format is not recognized. Invite blocked safely.')
   }
 
   try {
@@ -31,7 +46,7 @@ function assertD3ServiceRoleKey() {
       throw new Error('mismatch')
     }
   } catch {
-    throw new VidaOsError('MISSING_SERVER_CONFIGURATION', 'Service-role key is not the D3 homologation key. Invite blocked safely.')
+    throw new VidaOsError('MISSING_SERVER_CONFIGURATION', 'Administrative key is not the D3 homologation key. Invite blocked safely.')
   }
 }
 
