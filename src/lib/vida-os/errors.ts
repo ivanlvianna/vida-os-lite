@@ -3,6 +3,7 @@ export type VidaOsErrorCode =
   | 'FORBIDDEN'
   | 'INVALID_INPUT'
   | 'DOMAIN_RPC_FAILED'
+  | 'DOMAIN_READ_FAILED'
   | 'MISSING_SERVER_CONFIGURATION'
 
 export class VidaOsError extends Error {
