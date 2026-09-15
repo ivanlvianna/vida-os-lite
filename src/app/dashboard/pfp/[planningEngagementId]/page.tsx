@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { loadPfpCockpitWorkflow } from '../../../../app-services/load-pfp-cockpit'
@@ -24,8 +25,7 @@ function formatDate(value: string | null | undefined): string {
 }
 
 function stateLabel(value: string | null | undefined): string {
-  if (!value) return 'Sem estado'
-  return value.replaceAll('_', ' ')
+  return value ? value.replaceAll('_', ' ') : 'Sem estado'
 }
 
 function Section({
@@ -35,7 +35,7 @@ function Section({
 }: {
   title: string
   eyebrow: string
-  children: React.ReactNode
+  children: ReactNode
 }) {
   return (
     <section
@@ -66,11 +66,11 @@ function Section({
   )
 }
 
-function Empty({ children }: { children: React.ReactNode }) {
+function Empty({ children }: { children: ReactNode }) {
   return <p style={{ margin: 0, color: '#888', lineHeight: 1.6 }}>{children}</p>
 }
 
-function Badge({ children }: { children: React.ReactNode }) {
+function Badge({ children }: { children: ReactNode }) {
   return (
     <span
       style={{
@@ -90,6 +90,21 @@ function Badge({ children }: { children: React.ReactNode }) {
   )
 }
 
+function RootBlock({ children }: { children: ReactNode }) {
+  return (
+    <div
+      style={{
+        border: '1px solid #efeee9',
+        borderRadius: '6px',
+        padding: '14px',
+        marginBottom: '10px',
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
 export default async function PfpCockpitPage({ params }: PageProps) {
   const { planningEngagementId } = await params
   const supabase = await createSessionContext()
@@ -106,11 +121,6 @@ export default async function PfpCockpitPage({ params }: PageProps) {
   }
 
   const { summary } = cockpit
-  const currentReport = cockpit.reports.at(-1)
-  const currentPlan = cockpit.plans.at(-1)
-  const latestImplementation = cockpit.implementations.at(-1)
-  const latestReview = cockpit.reviews.at(-1)
-
   const metricCards = [
     ['Instrumentos', summary.instrument_run_count],
     ['Hipóteses ativas', summary.active_hypothesis_count],
@@ -236,8 +246,9 @@ export default async function PfpCockpitPage({ params }: PageProps) {
               <Empty>Nenhuma InterviewRecord durável registrada neste ciclo.</Empty>
             ) : (
               cockpit.interviews.map((item) => (
-                <div key={item.interview_record_id} style={{ marginBottom: '14px' }}>
+                <RootBlock key={item.interview_record_id}>
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '9px', flexWrap: 'wrap' }}>
+                    <Badge>Root {shortId(item.interview_record_id)}</Badge>
                     <Badge>Versão {item.current_version_no ?? '—'}</Badge>
                     {item.has_active_draft && <Badge>Draft ativo</Badge>}
                   </div>
@@ -247,12 +258,12 @@ export default async function PfpCockpitPage({ params }: PageProps) {
                   <p style={{ margin: 0, lineHeight: 1.55 }}>
                     <strong>Objetivos:</strong> {item.objectives_narrative || '—'}
                   </p>
-                </div>
+                </RootBlock>
               ))
             )}
           </Section>
 
-          <Section eyebrow="Diagnóstico VIDA" title="Instrumentos e síntese">
+          <Section eyebrow="Diagnóstico VIDA" title="Instrumentos e sínteses">
             <div style={{ marginBottom: '18px' }}>
               {cockpit.instruments.length === 0 ? (
                 <Empty>Nenhum InstrumentRun registrado.</Empty>
@@ -260,7 +271,8 @@ export default async function PfpCockpitPage({ params }: PageProps) {
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {cockpit.instruments.map((item) => (
                     <Badge key={item.instrument_run_id}>
-                      {item.instrument_code} · v{item.current_version_no ?? '—'}
+                      {item.instrument_code} · root {shortId(item.instrument_run_id)} · v
+                      {item.current_version_no ?? '—'}
                     </Badge>
                   ))}
                 </div>
@@ -270,14 +282,17 @@ export default async function PfpCockpitPage({ params }: PageProps) {
               <Empty>Nenhum PCP/DiagnosticSynthesis derivado.</Empty>
             ) : (
               cockpit.syntheses.map((item) => (
-                <div key={item.diagnostic_synthesis_id}>
+                <RootBlock key={item.diagnostic_synthesis_id}>
+                  <div style={{ marginBottom: '7px' }}>
+                    <Badge>Root {shortId(item.diagnostic_synthesis_id)}</Badge>
+                  </div>
                   <p style={{ lineHeight: 1.6, margin: '0 0 8px' }}>
                     {item.integrated_synthesis_narrative || 'Síntese sem narrativa.'}
                   </p>
                   <span style={{ color: '#777', fontSize: '0.76rem' }}>
                     {item.proposal_count} proposta(s) de hipótese
                   </span>
-                </div>
+                </RootBlock>
               ))
             )}
           </Section>
@@ -286,19 +301,15 @@ export default async function PfpCockpitPage({ params }: PageProps) {
             {cockpit.hypotheses.length === 0 ? (
               <Empty>Nenhuma WorkingHypothesis estabelecida.</Empty>
             ) : (
-              <div style={{ display: 'grid', gap: '12px' }}>
-                {cockpit.hypotheses.map((item) => (
-                  <div
-                    key={item.working_hypothesis_id}
-                    style={{ borderLeft: '3px solid #d7ae4d', paddingLeft: '12px' }}
-                  >
-                    <div style={{ marginBottom: '6px' }}>
-                      <Badge>{stateLabel(item.current_state)}</Badge>
-                    </div>
-                    <div style={{ lineHeight: 1.55 }}>{item.hypothesis_statement || '—'}</div>
+              cockpit.hypotheses.map((item) => (
+                <RootBlock key={item.working_hypothesis_id}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '7px', flexWrap: 'wrap' }}>
+                    <Badge>Root {shortId(item.working_hypothesis_id)}</Badge>
+                    <Badge>{stateLabel(item.current_state)}</Badge>
                   </div>
-                ))}
-              </div>
+                  <div style={{ lineHeight: 1.55 }}>{item.hypothesis_statement || '—'}</div>
+                </RootBlock>
+              ))
             )}
           </Section>
 
@@ -315,87 +326,110 @@ export default async function PfpCockpitPage({ params }: PageProps) {
             {cockpit.sessions.length === 0 ? (
               <Empty>Nenhuma DiagnosticSession registrada.</Empty>
             ) : (
-              <div style={{ display: 'grid', gap: '10px' }}>
-                {cockpit.sessions.map((item) => (
-                  <div key={item.diagnostic_session_id} style={{ fontSize: '0.84rem' }}>
-                    <strong>{formatDate(item.session_occurred_at)}</strong> · v
-                    {item.current_version_no ?? '—'} · {item.hypothesis_count} hipótese(s) ·{' '}
-                    {item.decision_note_count} nota(s) de decisão
+              cockpit.sessions.map((item) => (
+                <RootBlock key={item.diagnostic_session_id}>
+                  <div style={{ fontSize: '0.84rem', lineHeight: 1.6 }}>
+                    <strong>Root {shortId(item.diagnostic_session_id)}</strong> ·{' '}
+                    {formatDate(item.session_occurred_at)} · v{item.current_version_no ?? '—'} ·{' '}
+                    {item.hypothesis_count} hipótese(s) · {item.decision_note_count} nota(s) de decisão
                   </div>
-                ))}
-              </div>
+                </RootBlock>
+              ))
             )}
           </Section>
 
-          <Section eyebrow="REL-01" title="Relatório diagnóstico">
-            {!currentReport ? (
+          <Section eyebrow="REL-01" title="Relatórios diagnósticos">
+            {cockpit.reports.length === 0 ? (
               <Empty>Nenhum DiagnosticReport registrado.</Empty>
             ) : (
-              <div>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                  <Badge>{stateLabel(currentReport.current_state)}</Badge>
-                  <Badge>v{currentReport.current_version_no ?? '—'}</Badge>
-                  {currentReport.has_active_draft && <Badge>Draft ativo</Badge>}
-                </div>
-                <p style={{ lineHeight: 1.6, margin: '0 0 12px' }}>
-                  {currentReport.report_narrative || 'Relatório sem narrativa.'}
-                </p>
-                <div style={{ fontSize: '0.78rem', color: '#666', lineHeight: 1.6 }}>
-                  Consenso mais recente:{' '}
-                  {currentReport.latest_consensus_understood === null
-                    ? 'não manifestado'
-                    : `${currentReport.latest_consensus_understood ? 'compreendido' : 'não compreendido'} / ${
-                        currentReport.latest_consensus_agreed ? 'acordado' : 'não acordado'
-                      }`}
-                </div>
-              </div>
+              cockpit.reports.map((report) => (
+                <RootBlock key={report.diagnostic_report_id}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    <Badge>Root {shortId(report.diagnostic_report_id)}</Badge>
+                    <Badge>{stateLabel(report.current_state)}</Badge>
+                    <Badge>v{report.current_version_no ?? '—'}</Badge>
+                    {report.has_active_draft && <Badge>Draft ativo</Badge>}
+                  </div>
+                  <p style={{ lineHeight: 1.6, margin: '0 0 12px' }}>
+                    {report.report_narrative || 'Relatório sem narrativa.'}
+                  </p>
+                  <div style={{ fontSize: '0.78rem', color: '#666', lineHeight: 1.6 }}>
+                    Consenso mais recente:{' '}
+                    {report.latest_consensus_understood === null
+                      ? 'não manifestado'
+                      : `${report.latest_consensus_understood ? 'compreendido' : 'não compreendido'} / ${
+                          report.latest_consensus_agreed ? 'acordado' : 'não acordado'
+                        }`}
+                  </div>
+                </RootBlock>
+              ))
             )}
           </Section>
 
-          <Section eyebrow="PLAN-01" title="Plano financeiro">
-            {!currentPlan ? (
+          <Section eyebrow="PLAN-01" title="Planos financeiros">
+            {cockpit.plans.length === 0 ? (
               <Empty>Nenhum FinancialPlan registrado.</Empty>
             ) : (
-              <div>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-                  <Badge>v{currentPlan.current_version_no ?? '—'}</Badge>
-                  {currentPlan.has_active_draft && <Badge>Draft ativo</Badge>}
-                </div>
-                <div style={{ lineHeight: 1.7, fontSize: '0.85rem' }}>
-                  <div><strong>Metas:</strong> {currentPlan.goal_count}</div>
-                  <div><strong>Estratégias:</strong> {currentPlan.strategy_count}</div>
-                  <div><strong>Hipóteses referenciadas:</strong> {currentPlan.hypothesis_count}</div>
-                  <div><strong>ReportVersion base:</strong> {shortId(currentPlan.diagnostic_report_version_id)}</div>
-                </div>
-              </div>
+              cockpit.plans.map((plan) => (
+                <RootBlock key={plan.financial_plan_id}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                    <Badge>Root {shortId(plan.financial_plan_id)}</Badge>
+                    <Badge>v{plan.current_version_no ?? '—'}</Badge>
+                    {plan.has_active_draft && <Badge>Draft ativo</Badge>}
+                  </div>
+                  <div style={{ lineHeight: 1.7, fontSize: '0.85rem' }}>
+                    <div><strong>Metas:</strong> {plan.goal_count}</div>
+                    <div><strong>Estratégias:</strong> {plan.strategy_count}</div>
+                    <div><strong>Hipóteses referenciadas:</strong> {plan.hypothesis_count}</div>
+                    <div><strong>ReportVersion base:</strong> {shortId(plan.diagnostic_report_version_id)}</div>
+                  </div>
+                </RootBlock>
+              ))
+            )}
+            <div style={{ marginTop: '10px', color: '#888', fontSize: '0.72rem' }}>
+              Nenhum plano é inferido como “principal” pelo Cockpit; cada Aggregate Root é exibido separadamente.
+            </div>
+          </Section>
+
+          <Section eyebrow="PRI-01" title="Implementações">
+            {cockpit.implementations.length === 0 ? (
+              <Empty>Nenhuma ImplementationEpisode registrada.</Empty>
+            ) : (
+              cockpit.implementations.map((item) => (
+                <RootBlock key={item.implementation_episode_id}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '7px', flexWrap: 'wrap' }}>
+                    <Badge>Root {shortId(item.implementation_episode_id)}</Badge>
+                    <Badge>v{item.current_version_no ?? '—'}</Badge>
+                  </div>
+                  <div style={{ fontSize: '0.84rem', lineHeight: 1.6 }}>
+                    {item.implementation_narrative || '—'}
+                  </div>
+                  <div style={{ color: '#777', fontSize: '0.74rem', marginTop: '7px' }}>
+                    FinancialPlanVersion: {shortId(item.financial_plan_version_id)}
+                  </div>
+                </RootBlock>
+              ))
             )}
           </Section>
 
-          <Section eyebrow="PRI-01 → RPM-01" title="Implementação e revisão">
-            {!latestImplementation ? (
-              <Empty>Nenhuma implementação registrada.</Empty>
+          <Section eyebrow="RPM-01" title="Revisões">
+            {cockpit.reviews.length === 0 ? (
+              <Empty>Nenhuma ReviewEpisode registrada.</Empty>
             ) : (
-              <div style={{ marginBottom: latestReview ? '18px' : 0 }}>
-                <div style={{ marginBottom: '6px' }}>
-                  <Badge>Implementação v{latestImplementation.current_version_no ?? '—'}</Badge>
-                </div>
-                <div style={{ fontSize: '0.84rem', lineHeight: 1.6 }}>
-                  {latestImplementation.implementation_narrative || '—'}
-                </div>
-              </div>
-            )}
-            {latestReview && (
-              <div style={{ borderTop: '1px solid #ecebe5', paddingTop: '16px' }}>
-                <div style={{ marginBottom: '6px' }}>
-                  <Badge>Revisão v{latestReview.current_version_no ?? '—'}</Badge>
-                </div>
-                <div style={{ fontSize: '0.84rem', lineHeight: 1.6 }}>
-                  {latestReview.review_narrative || '—'}
-                </div>
-                <div style={{ color: '#777', fontSize: '0.74rem', marginTop: '7px' }}>
-                  ImplementationVersion exata: {shortId(latestReview.implementation_episode_version_id)}
-                </div>
-              </div>
+              cockpit.reviews.map((item) => (
+                <RootBlock key={item.review_episode_id}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '7px', flexWrap: 'wrap' }}>
+                    <Badge>Root {shortId(item.review_episode_id)}</Badge>
+                    <Badge>v{item.current_version_no ?? '—'}</Badge>
+                  </div>
+                  <div style={{ fontSize: '0.84rem', lineHeight: 1.6 }}>
+                    {item.review_narrative || '—'}
+                  </div>
+                  <div style={{ color: '#777', fontSize: '0.74rem', marginTop: '7px' }}>
+                    ImplementationVersion exata: {shortId(item.implementation_episode_version_id)}
+                  </div>
+                </RootBlock>
+              ))
             )}
           </Section>
 
