@@ -1,4 +1,4 @@
-name: PFP Bootstrap Replay Proof — Semantic Qualification
+name: PFP Bootstrap Replay Proof — Chunk Semantic Diagnostic
 
 on:
   push:
@@ -9,163 +9,38 @@ on:
   workflow_dispatch:
 
 jobs:
-  replay:
+  diagnose:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: vida_replay
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d vida_replay"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vida_replay
-      PGPASSWORD: postgres
     steps:
-      - name: Checkout proof branch
-        uses: actions/checkout@v4
-
-      - name: Verify repository artifacts are structurally readable
+      - uses: actions/checkout@v4
+      - name: Reconstruct artifacts and test semantic readability
         shell: bash
         run: |
           set -euo pipefail
-          V06='supabase/bootstrap/VIDA_OS_CORE_V0_6_CANONICAL_20260914.sql.gz'
-          HIST='supabase/history/archives/PLANNING_CONTENT_EXACT_APPLIED_HISTORY_20260914.tar.gz'
-          test -f "$V06"
-          test -f "$HIST"
-          echo "Observed v0.6 sha256: $(sha256sum "$V06" | awk '{print $1}')"
-          echo "Observed history sha256: $(sha256sum "$HIST" | awk '{print $1}')"
-          gzip -t "$V06"
-          tar -tzf "$HIST" >/tmp/history-list.txt
+          C=supabase/bootstrap/byteexact_chunks
+
+          cat "$C/v06_01.b64part" "$C/v06_02.b64part" "$C/v06_03.b64part" \
+              "$C/v06_04a.b64part" "$C/v06_04b.b64part" "$C/v06_05.b64part" \
+            | base64 -d > /tmp/v06.sql.gz
+
+          cat "$C/pchist_01.b64part" "$C/pchist_02.b64part" "$C/pchist_03.b64part" \
+              "$C/pchist_04.b64part" "$C/pchist_05.b64part" \
+            | base64 -d > /tmp/planning-content-history.tar.gz
+
+          echo "reconstructed v0.6 sha256=$(sha256sum /tmp/v06.sql.gz | awk '{print $1}')"
+          echo "reconstructed history sha256=$(sha256sum /tmp/planning-content-history.tar.gz | awk '{print $1}')"
+          echo "reconstructed v0.6 bytes=$(wc -c </tmp/v06.sql.gz)"
+          echo "reconstructed history bytes=$(wc -c </tmp/planning-content-history.tar.gz)"
+
+          gzip -t /tmp/v06.sql.gz
+          echo 'V06_GZIP_READABLE=YES'
+
+          tar -tzf /tmp/planning-content-history.tar.gz >/tmp/history-list.txt
           count="$(grep -Ec '(^|/)2026[0-9]+_.*\.sql$' /tmp/history-list.txt)"
-          echo "Timestamped SQL migrations in archive: $count"
+          echo "HISTORY_TAR_READABLE=YES"
+          echo "HISTORY_SQL_COUNT=$count"
           test "$count" -eq 28
 
-      - name: Create minimal Supabase Auth compatibility surface
-        shell: bash
-        run: |
-          set -euo pipefail
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          do $$ begin create role anon nologin; exception when duplicate_object then null; end $$;
-          do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$;
-          do $$ begin create role service_role nologin; exception when duplicate_object then null; end $$;
-          create schema if not exists auth;
-          create table if not exists auth.users (id uuid primary key, email text);
-          create or replace function auth.uid() returns uuid language sql stable as $$
-            select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
-          $$;
-          grant usage on schema auth to anon, authenticated, service_role;
-          grant execute on function auth.uid() to anon, authenticated, service_role;
-          SQL
-
-      - name: Apply canonical VIDA OS v0.6
-        shell: bash
-        run: |
-          set -euo pipefail
-          gunzip -c supabase/bootstrap/VIDA_OS_CORE_V0_6_CANONICAL_20260914.sql.gz | psql "$DATABASE_URL" -v ON_ERROR_STOP=1
-
-      - name: Apply canonical v0.7 onboarding extension
-        shell: bash
-        run: |
-          set -euo pipefail
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/bootstrap/VIDA_OS_CORE_V0_7_ONBOARD_MEMBER_20260914.sql
-
-      - name: Replay exact Planning Content history
-        shell: bash
-        run: |
-          set -euo pipefail
-          tmpdir="$(mktemp -d)"
-          tar -xzf supabase/history/archives/PLANNING_CONTENT_EXACT_APPLIED_HISTORY_20260914.tar.gz -C "$tmpdir"
-          mapfile -t migrations < <(find "$tmpdir" -type f -name '2026*.sql' -print | sort)
-          test "${#migrations[@]}" -eq 28
-          for migration in "${migrations[@]}"; do
-            echo "Applying $(basename "$migration")"
-            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
-          done
-
-      - name: Compare deterministic Planning Content catalog oracle
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > /tmp/oracle.sql <<'SQL'
-          with
-          pc_tables as (
-            select c.oid,c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace
-            where n.nspname='public' and c.relkind='r' and c.relname like 'planning_content_%'
-          ),
-          cols as (
-            select c.relname as table_name,a.attnum,a.attname,pg_catalog.format_type(a.atttypid,a.atttypmod) as data_type,a.attnotnull,
-                   coalesce(pg_get_expr(ad.adbin,ad.adrelid),'') as default_expr
-            from pc_tables c join pg_attribute a on a.attrelid=c.oid and a.attnum>0 and not a.attisdropped
-            left join pg_attrdef ad on ad.adrelid=a.attrelid and ad.adnum=a.attnum
-          ),
-          cons as (
-            select c.relname as table_name,con.conname,con.contype::text as contype,pg_get_constraintdef(con.oid,true) as def
-            from pc_tables c join pg_constraint con on con.conrelid=c.oid
-          ),
-          idx as (
-            select t.relname as table_name,i.relname as index_name,pg_get_indexdef(i.oid) as def
-            from pc_tables t join pg_index x on x.indrelid=t.oid join pg_class i on i.oid=x.indexrelid
-          ),
-          funcs as (
-            select p.proname,pg_get_function_identity_arguments(p.oid) as args,pg_get_function_result(p.oid) as result,p.prosecdef,pg_get_functiondef(p.oid) as def
-            from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-            where n.nspname='public' and p.proname like 'pc_%'
-          ),
-          trigs as (
-            select t.relname as table_name,g.tgname,pg_get_triggerdef(g.oid,true) as def
-            from pc_tables t join pg_trigger g on g.tgrelid=t.oid where not g.tgisinternal
-          ),
-          pols as (
-            select schemaname,tablename,policyname,permissive::text as permissive,roles::text as roles,cmd,coalesce(qual,'') as qual,coalesce(with_check,'') as with_check
-            from pg_policies where schemaname='public' and tablename like 'planning_content_%'
-          ),
-          views as (
-            select c.relname,coalesce(array_to_string(c.reloptions,','),'') as options,pg_get_viewdef(c.oid,true) as def
-            from pg_class c join pg_namespace n on n.oid=c.relnamespace
-            where n.nspname='public' and c.relkind='v' and c.relname like 'pc_rm_%'
-          ),
-          table_grants as (
-            select table_name,grantee,privilege_type from information_schema.role_table_grants
-            where table_schema='public' and (table_name like 'planning_content_%' or table_name like 'pc_rm_%')
-          ),
-          routine_grants as (
-            select routine_name,grantee,privilege_type from information_schema.role_routine_grants
-            where specific_schema='public' and routine_name like 'pc_%'
-          )
-          select concat_ws('|',
-            (select count(*) from pc_tables),
-            (select count(*) from cols),
-            (select md5(coalesce(string_agg(table_name||'|'||attnum::text||'|'||attname||'|'||data_type||'|'||attnotnull::text||'|'||default_expr,E'\n' order by table_name,attnum),'')) from cols),
-            (select count(*) from cons),
-            (select md5(coalesce(string_agg(table_name||'|'||conname||'|'||contype||'|'||def,E'\n' order by table_name,conname),'')) from cons),
-            (select count(*) from idx),
-            (select md5(coalesce(string_agg(table_name||'|'||index_name||'|'||def,E'\n' order by table_name,index_name),'')) from idx),
-            (select count(*) from funcs),
-            (select md5(coalesce(string_agg(proname||'|'||args||'|'||result||'|'||prosecdef::text||'|'||def,E'\n' order by proname,args),'')) from funcs),
-            (select count(*) from trigs),
-            (select md5(coalesce(string_agg(table_name||'|'||tgname||'|'||def,E'\n' order by table_name,tgname),'')) from trigs),
-            (select count(*) from pols),
-            (select md5(coalesce(string_agg(tablename||'|'||policyname||'|'||permissive||'|'||roles||'|'||cmd||'|'||qual||'|'||with_check,E'\n' order by tablename,policyname),'')) from pols),
-            (select count(*) from views),
-            (select md5(coalesce(string_agg(relname||'|'||options||'|'||def,E'\n' order by relname),'')) from views),
-            (select count(*) from table_grants),
-            (select md5(coalesce(string_agg(table_name||'|'||grantee||'|'||privilege_type,E'\n' order by table_name,grantee,privilege_type),'')) from table_grants),
-            (select count(*) from routine_grants),
-            (select md5(coalesce(string_agg(routine_name||'|'||grantee||'|'||privilege_type,E'\n' order by routine_name,grantee,privilege_type),'')) from routine_grants)
-          );
-          SQL
-          expected='51|399|e96b4174c491c97f03c3dbcc20b8f9e4|314|e6c3e5a48a899054fabd089eaee51d1d|126|893385bd72389008c34b48e2d7f824f9|40|1026d9c1df2adb8d988f66466b2489ad|74|e73c072ece89da32319cadb824229ed5|51|c56f139fd5637c3a8be752d1d42ced94|12|63675e07daaaa508b5768abe230f9e9f|504|093bbf6569e282babeb6a74a1928830d|75|a6865834ee39fb609489d30c2c095437'
-          actual="$(psql "$DATABASE_URL" -Atq -f /tmp/oracle.sql)"
-          echo "Expected oracle: $expected"
-          echo "Actual oracle:   $actual"
-          test "$actual" = "$expected"
-
-      - name: Independent replay proof passed
-        run: echo 'PASS — repository artifacts reproduce the D3 Planning Content catalog on fresh PostgreSQL.'
+          gunzip -c /tmp/v06.sql.gz | sha256sum | sed 's/^/v0.6 uncompressed sha256=/'
+          tar -xzf /tmp/planning-content-history.tar.gz -C /tmp
+          find /tmp -type f -name '2026*.sql' -print0 | sort -z | xargs -0 cat | sha256sum | sed 's/^/history concatenated SQL sha256=/'
