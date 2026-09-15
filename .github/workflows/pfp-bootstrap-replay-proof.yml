@@ -3,7 +3,7 @@ name: PFP Bootstrap Replay Proof
 on:
   push:
     branches:
-      - pfp-bootstrap-replay-proof-2026-09-14
+      - pfp-bootstrap-replay-proof-byteexact-2026-09-14
   workflow_dispatch:
 
 jobs:
@@ -31,16 +31,27 @@ jobs:
       - name: Checkout proof branch
         uses: actions/checkout@v4
 
-      - name: Verify preserved artifacts
+      - name: Reconstruct and verify byte-exact artifacts
         shell: bash
         run: |
           set -euo pipefail
-          test -f supabase/bootstrap/VIDA_OS_CORE_V0_6_CANONICAL_20260914.sql.gz
-          test -f supabase/bootstrap/VIDA_OS_CORE_V0_7_ONBOARD_MEMBER_20260914.sql
-          test -f supabase/history/archives/PLANNING_CONTENT_EXACT_APPLIED_HISTORY_20260914.tar.gz
-          test -f supabase/bootstrap/replay_planning_content_history.sh
-          echo "v0.6 gzip sha256: $(sha256sum supabase/bootstrap/VIDA_OS_CORE_V0_6_CANONICAL_20260914.sql.gz | awk '{print $1}')"
-          echo "history archive sha256: $(sha256sum supabase/history/archives/PLANNING_CONTENT_EXACT_APPLIED_HISTORY_20260914.tar.gz | awk '{print $1}')"
+          C=supabase/bootstrap/byteexact_chunks
+          cat "$C/v06_01.b64part" "$C/v06_02.b64part" "$C/v06_03.b64part" \
+              "$C/v06_04a.b64part" "$C/v06_04b.b64part" "$C/v06_05.b64part" \
+            | base64 -d > /tmp/v06.sql.gz
+          cat "$C/pchist_01.b64part" "$C/pchist_02.b64part" "$C/pchist_03.b64part" \
+              "$C/pchist_04.b64part" "$C/pchist_05.b64part" \
+            | base64 -d > /tmp/planning-content-history.tar.gz
+
+          v06_sha="$(sha256sum /tmp/v06.sql.gz | awk '{print $1}')"
+          history_sha="$(sha256sum /tmp/planning-content-history.tar.gz | awk '{print $1}')"
+          echo "v0.6 reconstructed sha256: $v06_sha"
+          echo "history reconstructed sha256: $history_sha"
+          test "$v06_sha" = '67aa021b044a4549a7e38e4fae925297440e99377475bcc003f6fda2fdfe33b1'
+          test "$history_sha" = 'bfff89688a1490c00ddcb6dd1118982217ba2075db921c6500bb06aaeae7ab4c'
+          gzip -t /tmp/v06.sql.gz
+          tar -tzf /tmp/planning-content-history.tar.gz >/tmp/history-list.txt
+          test "$(grep -Ec '(^|/)2026[0-9]+_.*\.sql$' /tmp/history-list.txt)" -eq 28
 
       - name: Create minimal Supabase Auth compatibility surface
         shell: bash
@@ -70,8 +81,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gunzip -c supabase/bootstrap/VIDA_OS_CORE_V0_6_CANONICAL_20260914.sql.gz \
-            | psql "$DATABASE_URL" -v ON_ERROR_STOP=1
+          gunzip -c /tmp/v06.sql.gz | psql "$DATABASE_URL" -v ON_ERROR_STOP=1
 
       - name: Apply canonical v0.7 onboarding extension
         shell: bash
@@ -84,7 +94,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          DATABASE_URL="$DATABASE_URL" bash supabase/bootstrap/replay_planning_content_history.sh
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          tar -xzf /tmp/planning-content-history.tar.gz -C "$tmpdir"
+          mapfile -t migrations < <(find "$tmpdir" -type f -name '2026*.sql' -print | sort)
+          test "${#migrations[@]}" -eq 28
+          for migration in "${migrations[@]}"; do
+            echo "Applying $(basename "$migration")"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
+          done
 
       - name: Compare deterministic Planning Content catalog oracle
         shell: bash
@@ -180,4 +198,4 @@ jobs:
           test "$actual" = "$expected"
 
       - name: Planning Content replay proof passed
-        run: echo 'PASS — v0.6 + v0.7 + 28 exact Planning Content migrations reproduce the D3 Planning Content catalog oracle.'
+        run: echo 'PASS — byte-exact v0.6 + v0.7 + 28 exact Planning Content migrations reproduce the D3 Planning Content catalog oracle.'
